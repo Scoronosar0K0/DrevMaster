@@ -8,6 +8,6 @@ npm-debug.log*
 .git
 .gitignore
 README.md
-Dockerfile
+Dockerfile.ubuntu
 .dockerignore
-drevmaster.db 
+*.md 
