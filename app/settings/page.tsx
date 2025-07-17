@@ -132,15 +132,19 @@ export default function SettingsPage() {
       });
 
       if (response.ok) {
-        const updatedUser = await response.json();
-        localStorage.setItem("drevmaster_user", JSON.stringify(updatedUser));
-        setCurrentUser(updatedUser);
-        setProfileData({
-          ...profileData,
-          currentPassword: "",
-          newPassword: "",
-          confirmPassword: "",
-        });
+        const result = await response.json();
+        if (result.user) {
+          localStorage.setItem("drevmaster_user", JSON.stringify(result.user));
+          setCurrentUser(result.user);
+          setProfileData({
+            name: result.user.name || "",
+            email: result.user.email || "",
+            phone: result.user.phone || "",
+            currentPassword: "",
+            newPassword: "",
+            confirmPassword: "",
+          });
+        }
         alert("Профиль обновлен");
       } else {
         const error = await response.json();
@@ -201,12 +205,25 @@ export default function SettingsPage() {
 
   const toggleUserStatus = async (id: number, currentStatus: boolean) => {
     try {
+      // Получаем данные пользователя для сохранения его полей
+      const user = users.find((u) => u.id === id);
+      if (!user) {
+        alert("Пользователь не найден");
+        return;
+      }
+
       const response = await fetch(`/api/users/${id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ is_active: !currentStatus }),
+        body: JSON.stringify({
+          name: user.name,
+          role: user.role,
+          email: user.email || "",
+          phone: user.phone || "",
+          is_active: !currentStatus,
+        }),
       });
 
       if (response.ok) {

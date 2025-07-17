@@ -7,8 +7,12 @@ export async function POST() {
     db.pragma("foreign_keys = OFF");
 
     const transaction = db.transaction(() => {
-      // Удаляем все данные в правильном порядке
+      // Удаляем все данные в правильном порядке (сначала зависимые таблицы)
       db.prepare("DELETE FROM activity_logs").run();
+      db.prepare("DELETE FROM manager_sales").run();
+      db.prepare("DELETE FROM manager_transfers").run();
+      db.prepare("DELETE FROM supplier_debts").run();
+      db.prepare("DELETE FROM expenses").run();
       db.prepare("DELETE FROM sales").run();
       db.prepare("DELETE FROM loans").run();
       db.prepare("DELETE FROM orders").run();
@@ -19,9 +23,9 @@ export async function POST() {
       // Удаляем всех пользователей кроме админа
       db.prepare("DELETE FROM users WHERE username != 'admin'").run();
 
-      // Очищаем счетчики автоинкремента
+      // Очищаем счетчики автоинкремента для всех таблиц
       db.prepare(
-        "UPDATE sqlite_sequence SET seq = 0 WHERE name IN ('activity_logs', 'sales', 'loans', 'orders', 'supplier_items', 'suppliers', 'partners')"
+        "UPDATE sqlite_sequence SET seq = 0 WHERE name IN ('activity_logs', 'manager_sales', 'manager_transfers', 'supplier_debts', 'expenses', 'sales', 'loans', 'orders', 'supplier_items', 'suppliers', 'partners')"
       ).run();
       db.prepare(
         "UPDATE sqlite_sequence SET seq = 1 WHERE name = 'users'"

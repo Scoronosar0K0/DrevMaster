@@ -52,8 +52,8 @@ export async function POST(request: NextRequest) {
     const hashedPassword = bcrypt.hashSync(password, 10);
 
     const insert = db.prepare(`
-      INSERT INTO users (username, password, role, name, email, phone)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO users (username, password, role, name, email, phone, is_active)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = insert.run(
@@ -62,7 +62,8 @@ export async function POST(request: NextRequest) {
       role,
       name,
       email || null,
-      phone || null
+      phone || null,
+      true
     );
 
     // Если создаем партнера, также создаем запись в таблице partners
