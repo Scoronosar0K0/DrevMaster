@@ -1,0 +1,51 @@
+{
+  "name": "drevmaster/system",
+  "description": "DrevMaster - Система управления деревообрабатывающим бизнесом",
+  "type": "project",
+  "keywords": [
+    "php",
+    "sqlite",
+    "business",
+    "management",
+    "timeweb"
+  ],
+  "homepage": "https://github.com/drevmaster/system",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "DrevMaster Team",
+      "email": "info@drevmaster.com"
+    }
+  ],
+  "require": {
+    "php": ">=7.4",
+    "ext-pdo": "*",
+    "ext-sqlite3": "*",
+    "ext-json": "*",
+    "ext-session": "*"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^9.0"
+  },
+  "autoload": {
+    "files": [
+      "init.php"
+    ]
+  },
+  "config": {
+    "optimize-autoloader": true,
+    "preferred-install": "dist",
+    "sort-packages": true
+  },
+  "scripts": {
+    "install-db": "php install.php",
+    "test": "phpunit"
+  },
+  "extra": {
+    "deployment": {
+      "platform": "timeweb",
+      "php-version": "7.4+",
+      "database": "sqlite"
+    }
+  }
+}

@@ -1,14 +1,18 @@
-[phases.setup]
-nixPkgs = ['nodejs-18_x', 'npm-9_x']
+[variables]
+NODE_ENV = "production"
+JWT_SECRET = "drevmaster-secret-key-2024"
 
 [phases.build]
 cmds = [
-  'npm install',
-  'npm run build'
+  "npm ci --only=production",
+  "npm run build"
+]
+
+[phases.setup]
+cmds = [
+  "mkdir -p /app/data",
+  "chmod 755 /app/data"
 ]
 
 [start]
-cmd = 'npm start'
-
-[variables]
-NODE_ENV = 'production' 
+cmd = "bash start.sh" 

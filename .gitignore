@@ -1,38 +1,86 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+drevmaster.db
 
-# dependencies
-/node_modules
-/.pnp
-.pnp.js
+# Logs
+*.log
+logs/
+error.log
+access.log
 
-# testing
-/coverage
+# PHP
+vendor/
+composer.phar
+.env
+.env.local
 
-# next.js
-/.next/
-/out/
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
-# production
-/build
-
-# misc
+# OS files
 .DS_Store
-*.pem
+Thumbs.db
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# Backup files
+*.bak
+*.backup
+*.old
+*.tmp
 
-# local env files
-.env*.local
+# Build files
+dist/
+build/
+.next/
+node_modules/
 
-# vercel
-.vercel
+# Uploads
+uploads/
+files/
+storage/
 
-# typescript
-*.tsbuildinfo
+# Config files (may contain sensitive data)
+config/local.php
+config/production.php
+
+# Temporary files
+temp/
+tmp/
+cache/
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Test files
+test-*.php
+debug-*.php
+*-test.php
+*-debug.php
+
+# Next.js (if keeping hybrid)
+.next/
+out/
 next-env.d.ts
+package-lock.json
 
-# sqlite database (keep in repo for demo)
-# drevmaster.db 
+# Docker
+.dockerignore
+Dockerfile*
+
+# Railway/Vercel configs
+railway.json
+vercel.json
+nixpacks.toml 

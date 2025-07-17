@@ -45,6 +45,13 @@ interface Order {
 interface ContainerLoad {
   container: number;
   value: number;
+  description?: string;
+}
+
+interface ContainerInfo {
+  container: number;
+  value: number;
+  description: string;
 }
 
 export default function OrdersPage() {
@@ -473,11 +480,11 @@ export default function OrdersPage() {
     if (!selectedOrder) return;
 
     const containers = getOrderContainers(selectedOrder);
-    const selectedContainerData = containers.filter((c: ContainerLoad) =>
+    const selectedContainerData = containers.filter((c: ContainerInfo) =>
       transportForm.selectedContainers.includes(c.container)
     );
     const totalValue = selectedContainerData.reduce(
-      (sum: number, c: ContainerLoad) => sum + c.value,
+      (sum: number, c: ContainerInfo) => sum + c.value,
       0
     );
 

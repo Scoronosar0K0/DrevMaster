@@ -2,7 +2,12 @@ const Database = require("better-sqlite3");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 
-const dbPath = path.join(process.cwd(), "drevmaster.db");
+// Используем переменную окружения или дефолтный путь для production
+const dbPath =
+  process.env.NODE_ENV === "production"
+    ? path.join("/app/data", "drevmaster.db")
+    : path.join(process.cwd(), "drevmaster.db");
+
 const db = new Database(dbPath);
 
 // Включаем поддержку внешних ключей

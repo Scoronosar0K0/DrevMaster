@@ -1,33 +1,41 @@
-# Используем Node.js 18 Alpine для меньшего размера
+# Use the official Node.js 18 runtime as a parent image
 FROM node:18-alpine
 
-# Устанавливаем необходимые системные зависимости для better-sqlite3
-RUN apk add --no-cache \
-    python3 \
-    make \
-    g++ \
-    sqlite
+# Install bash for our startup script
+RUN apk add --no-cache bash
 
-# Устанавливаем рабочую директорию
+# Set the working directory in the container
 WORKDIR /app
 
-# Копируем package.json и package-lock.json (если есть)
+# Copy package.json and package-lock.json (if available)
 COPY package*.json ./
 
-# Устанавливаем зависимости
-RUN npm install --force --production=false
+# Install all dependencies first (including dev for build)
+RUN npm install
 
-# Копируем исходный код
+# Copy the rest of the application code
 COPY . .
 
-# Собираем приложение
+# Create the database directory and set permissions
+RUN mkdir -p /app/data && chmod 755 /app/data
+
+# Make start script executable
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+
+# Set environment variables
+ENV NODE_ENV=production
+ENV JWT_SECRET=drevmaster-secret-key-2024
+ENV PORT=3000
+
+# Build the application
 RUN npm run build
 
-# Экспонируем порт
-EXPOSE 3000
+# Remove dev dependencies after build
+RUN npm prune --omit=dev
 
-# Устанавливаем переменную среды
-ENV NODE_ENV=production
+# Expose the port the app runs on
+EXPOSE $PORT
 
-# Запускаем приложение
-CMD ["npm", "start"] 
+# Start the application using our script
+CMD ["/app/start.sh"] 
