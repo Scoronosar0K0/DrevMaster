@@ -5,10 +5,11 @@ initDatabase();
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const itemId = parseInt(params.id);
+    const resolvedParams = await params;
+    const itemId = parseInt(resolvedParams.id);
 
     const deleteItem = db.prepare("DELETE FROM supplier_items WHERE id = ?");
     const result = deleteItem.run(itemId);

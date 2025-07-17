@@ -5,10 +5,11 @@ initDatabase();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const orderId = parseInt(params.id);
+    const resolvedParams = await params;
+    const orderId = parseInt(resolvedParams.id);
 
     if (!orderId) {
       return NextResponse.json(

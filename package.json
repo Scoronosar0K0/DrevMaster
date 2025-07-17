@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": "18.x"
+    "node": ">=18.x"
   },
   "scripts": {
     "dev": "next dev",
@@ -20,14 +20,14 @@
     "better-sqlite3": "^9.2.2",
     "jose": "^6.0.12",
     "jsonwebtoken": "^9.0.2",
-    "next": "14.0.0",
+    "next": "^15.4.1",
     "next-auth": "^4.24.5",
     "react": "^18",
     "react-dom": "^18",
     "sqlite3": "^5.1.6"
   },
   "devDependencies": {
-    "@types/node": "^18",
+    "@types/node": "^24.0.14",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "autoprefixer": "^10.0.1",

@@ -5,12 +5,13 @@ initDatabase();
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const body = await request.json();
     const { containers, totalCost } = body;
-    const orderId = parseInt(params.id);
+    const resolvedParams = await params;
+    const orderId = parseInt(resolvedParams.id);
 
     if (
       !containers ||

@@ -6,10 +6,11 @@ initDatabase();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const managerId = parseInt(params.id);
+    const resolvedParams = await params;
+    const managerId = parseInt(resolvedParams.id);
 
     const manager = db
       .prepare(
@@ -47,10 +48,11 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const managerId = parseInt(params.id);
+    const resolvedParams = await params;
+    const managerId = parseInt(resolvedParams.id);
     const body = await request.json();
     const { username, password, name, email, phone, is_active } = body;
 
@@ -127,10 +129,11 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const managerId = parseInt(params.id);
+    const resolvedParams = await params;
+    const managerId = parseInt(resolvedParams.id);
 
     // Проверяем что менеджер существует
     const manager = db

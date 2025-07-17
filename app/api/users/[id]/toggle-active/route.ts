@@ -5,12 +5,13 @@ initDatabase();
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const body = await request.json();
     const { is_active } = body;
-    const userId = parseInt(params.id);
+    const resolvedParams = await params;
+    const userId = parseInt(resolvedParams.id);
 
     const update = db.prepare(`
       UPDATE users SET is_active = ? WHERE id = ?
