@@ -5,7 +5,7 @@ initDatabase();
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
     const body = await request.json();
@@ -18,8 +18,7 @@ export async function POST(
       link_to_manager,
       manager_id,
     } = body;
-    const resolvedParams = await params;
-    const orderId = parseInt(resolvedParams.id);
+    const orderId = parseInt(params.id);
 
     if (!value || value <= 0 || !price || price <= 0 || !buyer_name || !date) {
       return NextResponse.json(

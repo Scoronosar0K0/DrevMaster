@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query, initDatabase } from "@/lib/database";
+import { db, initDatabase } from "@/lib/database";
 import bcrypt from "bcryptjs";
 import { SignJWT } from "jose";
 
-// Инициализируем базу данных при первом запуске
-initDatabase().catch(console.error);
+initDatabase();
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "drevmaster-secret-key-2024"
@@ -23,17 +22,16 @@ export async function POST(request: NextRequest) {
     }
 
     // Проверяем пользователя в базе данных
-    const userResult = await query(
-      `
+    const user = db
+      .prepare(
+        `
         SELECT u.*, p.id as partner_id 
         FROM users u 
         LEFT JOIN partners p ON u.id = p.user_id 
-        WHERE u.username = $1 AND u.is_active = true
-      `,
-      [username]
-    );
-
-    const user = userResult.rows?.[0];
+        WHERE u.username = ? AND u.is_active = true
+      `
+      )
+      .get(username) as any;
 
     if (!user) {
       return NextResponse.json(
@@ -43,7 +41,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Проверяем пароль
-    const isPasswordValid = await bcrypt.compare(password, user.password);
+    const isPasswordValid = bcrypt.compareSync(password, user.password);
     if (!isPasswordValid) {
       return NextResponse.json(
         { error: "Неверный логин или пароль" },
@@ -64,18 +62,12 @@ export async function POST(request: NextRequest) {
 
     // Логируем вход
     try {
-      await query(
+      db.prepare(
         `
         INSERT INTO activity_logs (user_id, action, entity_type, details)
-        VALUES ($1, $2, $3, $4)
-      `,
-        [
-          user.id,
-          "вход",
-          "auth",
-          `Пользователь ${user.username} вошел в систему`,
-        ]
-      );
+        VALUES (?, 'вход', 'auth', ?)
+      `
+      ).run(user.id, `Пользователь ${user.username} вошел в систему`);
     } catch (e) {
       console.log("Не удалось записать в лог");
     }

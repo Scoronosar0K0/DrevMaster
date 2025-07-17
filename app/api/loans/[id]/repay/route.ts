@@ -5,11 +5,10 @@ initDatabase();
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const resolvedParams = await params;
-    const loanId = parseInt(resolvedParams.id);
+    const loanId = parseInt(params.id);
     const body = await request.json();
     const { amount, isPartialPayment } = body;
 

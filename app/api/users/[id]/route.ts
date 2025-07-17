@@ -6,13 +6,12 @@ initDatabase();
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
     const body = await request.json();
     const { password, role, name, email, phone } = body;
-    const resolvedParams = await params;
-    const userId = parseInt(resolvedParams.id);
+    const userId = parseInt(params.id);
 
     if (!role || !name) {
       return NextResponse.json(

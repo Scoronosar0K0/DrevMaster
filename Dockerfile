@@ -1,41 +1,47 @@
-# Use the official Node.js 18 runtime as a parent image
-FROM node:18-alpine
+# Используем официальный Node.js образ
+FROM node:18-alpine AS base
 
-# Install bash for our startup script
-RUN apk add --no-cache bash
-
-# Set the working directory in the container
+# Устанавливаем зависимости только когда нужно
+FROM base AS deps
+# Проверяем https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ec926ef50a31506c3#nodealpine для понимания, почему libc6-compat
+RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-# Copy package.json and package-lock.json (if available)
-COPY package*.json ./
+# Копируем файлы зависимостей
+COPY package.json package-lock.json* ./
+RUN npm ci --only=production
 
-# Install all dependencies first (including dev for build)
-RUN npm install
-
-# Copy the rest of the application code
+# Пересобираем исходный код только когда нужно
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Create the database directory and set permissions
-RUN mkdir -p /app/data && chmod 755 /app/data
-
-# Make start script executable
-COPY start.sh /app/start.sh
-RUN chmod +x /app/start.sh
-
-# Set environment variables
-ENV NODE_ENV=production
-ENV JWT_SECRET=drevmaster-secret-key-2024
-ENV PORT=3000
-
-# Build the application
+# Создаем .next папку с оптимизированным production build
 RUN npm run build
 
-# Remove dev dependencies after build
-RUN npm prune --omit=dev
+# Production образ, копируем все файлы и запускаем next
+FROM base AS runner
+WORKDIR /app
 
-# Expose the port the app runs on
-EXPOSE $PORT
+ENV NODE_ENV production
+# Создаем пользователя nextjs
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
 
-# Start the application using our script
-CMD ["/app/start.sh"] 
+# Копируем базу данных и создаем директорию
+COPY --from=builder /app/drevmaster.db ./drevmaster.db
+RUN mkdir -p /app/.next && chown -R nextjs:nodejs /app/.next
+
+# Копируем собранное приложение
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+USER nextjs
+
+EXPOSE 3000
+
+ENV PORT 3000
+ENV HOSTNAME "0.0.0.0"
+
+CMD ["node", "server.js"] 

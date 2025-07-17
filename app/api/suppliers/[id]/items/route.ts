@@ -5,11 +5,10 @@ initDatabase();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const resolvedParams = await params;
-    const supplierId = parseInt(resolvedParams.id);
+    const supplierId = parseInt(params.id);
 
     const items = db
       .prepare(
@@ -33,13 +32,12 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
     const body = await request.json();
     const { name } = body;
-    const resolvedParams = await params;
-    const supplierId = parseInt(resolvedParams.id);
+    const supplierId = parseInt(params.id);
 
     if (!name) {
       return NextResponse.json(

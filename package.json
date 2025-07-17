@@ -8,25 +8,28 @@
     "start": "next start",
     "lint": "next lint",
     "seed": "node scripts/seed-database.js",
-    "db:migrate": "node scripts/migrate-database.js",
-    "db:setup": "node scripts/setup-database.js"
+    "docker:build": "docker build -t drevmaster .",
+    "docker:run": "docker run -p 3000:3000 drevmaster",
+    "docker:compose": "docker-compose up -d",
+    "docker:compose:down": "docker-compose down",
+    "docker:compose:logs": "docker-compose logs -f",
+    "deploy": "npm run build && npm start"
   },
   "dependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.10",
-    "@vercel/postgres": "^0.5.1",
     "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^9.2.2",
     "jose": "^6.0.12",
     "jsonwebtoken": "^9.0.2",
     "next": "14.0.0",
     "next-auth": "^4.24.5",
-    "pg": "^8.11.3",
     "react": "^18",
-    "react-dom": "^18"
+    "react-dom": "^18",
+    "sqlite3": "^5.1.6"
   },
   "devDependencies": {
     "@types/node": "^20",
-    "@types/pg": "^8.10.9",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "autoprefixer": "^10.0.1",
@@ -35,5 +38,9 @@
     "postcss": "^8",
     "tailwindcss": "^3.3.0",
     "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
   }
 }

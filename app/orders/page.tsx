@@ -45,13 +45,6 @@ interface Order {
 interface ContainerLoad {
   container: number;
   value: number;
-  description?: string;
-}
-
-interface ContainerInfo {
-  container: number;
-  value: number;
-  description: string;
 }
 
 export default function OrdersPage() {
@@ -480,11 +473,11 @@ export default function OrdersPage() {
     if (!selectedOrder) return;
 
     const containers = getOrderContainers(selectedOrder);
-    const selectedContainerData = containers.filter((c: ContainerInfo) =>
+    const selectedContainerData = containers.filter((c: ContainerLoad) =>
       transportForm.selectedContainers.includes(c.container)
     );
     const totalValue = selectedContainerData.reduce(
-      (sum: number, c: ContainerInfo) => sum + c.value,
+      (sum: number, c: ContainerLoad) => sum + c.value,
       0
     );
 
@@ -1758,7 +1751,7 @@ export default function OrdersPage() {
                   </label>
                   <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto">
                     {getOrderContainers(selectedOrder).map(
-                      (container: ContainerLoad, index: number) => (
+                      (container, index) => (
                         <div
                           key={index}
                           className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50"

@@ -5,11 +5,10 @@ initDatabase();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const resolvedParams = await params;
-    const supplierId = parseInt(resolvedParams.id);
+    const supplierId = parseInt(params.id);
 
     // Получаем активные долги поставщика из таблицы supplier_debts
     const debts = db

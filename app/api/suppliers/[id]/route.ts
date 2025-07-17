@@ -5,13 +5,12 @@ initDatabase();
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
     const body = await request.json();
     const { name, contact_person, phone, email, address, description } = body;
-    const resolvedParams = await params;
-    const supplierId = parseInt(resolvedParams.id);
+    const supplierId = parseInt(params.id);
 
     if (!name || !phone) {
       return NextResponse.json(
@@ -55,11 +54,10 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const resolvedParams = await params;
-    const supplierId = parseInt(resolvedParams.id);
+    const supplierId = parseInt(params.id);
 
     const deleteSupplier = db.prepare("DELETE FROM suppliers WHERE id = ?");
     const result = deleteSupplier.run(supplierId);
