@@ -1,19 +1,46 @@
-const Database = require("better-sqlite3");
-const path = require("path");
-const bcrypt = require("bcryptjs");
+import { Pool, PoolClient } from "pg";
+import bcrypt from "bcryptjs";
 
-const dbPath = path.join(process.cwd(), "drevmaster.db");
-const db = new Database(dbPath);
+// Экспорт sql функции для продакшена
+let sql: any;
+if (process.env.NODE_ENV === "production") {
+  sql = require("@vercel/postgres").sql;
+}
+export { sql };
 
-// Включаем поддержку внешних ключей
-db.pragma("foreign_keys = ON");
+// Инициализация пула соединений PostgreSQL
+let pool: Pool;
+
+if (process.env.NODE_ENV !== "production") {
+  // Для локальной разработки используем pg
+  pool = new Pool({
+    connectionString:
+      process.env.DATABASE_URL || "postgresql://localhost:5432/drevmaster",
+    ssl: false,
+  });
+}
+
+// Функция для выполнения запросов
+export async function query(text: string, params?: any[]): Promise<any> {
+  if (process.env.NODE_ENV === "production") {
+    return await sql.query(text, params);
+  } else {
+    const client = await pool.connect();
+    try {
+      const result = await client.query(text, params);
+      return result;
+    } finally {
+      client.release();
+    }
+  }
+}
 
 // Типы данных
 export interface User {
   id: number;
   username: string;
   password: string;
-  role: "admin" | "partner" | "user";
+  role: "admin" | "partner" | "user" | "manager";
   name: string;
   email?: string;
   phone?: string;
@@ -95,396 +122,278 @@ export interface ActivityLog {
   created_at: string;
 }
 
-// Инициализация таблиц
-export function initDatabase() {
-  // Безопасная миграция для добавления роли 'manager'
+// Инициализация базы данных
+export async function initDatabase() {
   try {
-    // Проверяем, существует ли таблица users
-    const tableExists = db
-      .prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
-      )
-      .get();
+    console.log("Инициализация базы данных PostgreSQL...");
 
-    if (tableExists) {
-      // Проверяем текущее ограничение роли
-      const createTableSql = db
-        .prepare(
-          "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
-        )
-        .get() as any;
+    // Создание таблиц
+    await createTables();
 
-      if (
-        createTableSql &&
-        createTableSql.sql &&
-        !createTableSql.sql.includes("'manager'")
-      ) {
-        console.log(
-          "Обновляем схему таблицы users для добавления роли manager..."
-        );
+    // Создание администратора по умолчанию
+    await createDefaultAdmin();
 
-        // Временно отключаем foreign keys для безопасной миграции
-        db.pragma("foreign_keys = OFF");
-
-        // Начинаем транзакцию
-        db.exec(`
-          BEGIN TRANSACTION;
-          
-          -- Создаем временную таблицу с новой схемой
-          CREATE TABLE users_backup (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            role TEXT NOT NULL CHECK (role IN ('admin', 'partner', 'user', 'manager')),
-            name TEXT NOT NULL,
-            email TEXT,
-            phone TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
-            is_active BOOLEAN DEFAULT true
-          );
-          
-          -- Копируем данные
-          INSERT INTO users_backup 
-          SELECT id, username, password, role, name, email, phone, created_at, is_active 
-          FROM users;
-          
-          -- Удаляем старую таблицу
-          DROP TABLE users;
-          
-          -- Переименовываем новую таблицу
-          ALTER TABLE users_backup RENAME TO users;
-          
-          COMMIT;
-        `);
-
-        // Включаем обратно foreign keys
-        db.pragma("foreign_keys = ON");
-        console.log("Схема таблицы users обновлена!");
-      }
-    }
-  } catch (e) {
-    console.log("Ошибка при миграции users:", e);
-    // В случае ошибки включаем обратно foreign keys
-    db.pragma("foreign_keys = ON");
+    console.log("База данных успешно инициализирована!");
+  } catch (error) {
+    console.error("Ошибка инициализации базы данных:", error);
+    throw error;
   }
+}
 
-  // Безопасная миграция для добавления статуса 'loan'
-  try {
-    // Проверяем, существует ли таблица orders
-    const ordersTableExists = db
-      .prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='orders'"
-      )
-      .get();
-
-    if (ordersTableExists) {
-      // Проверяем текущее ограничение статуса
-      const createOrdersTableSql = db
-        .prepare(
-          "SELECT sql FROM sqlite_master WHERE type='table' AND name='orders'"
-        )
-        .get() as any;
-
-      if (
-        createOrdersTableSql &&
-        createOrdersTableSql.sql &&
-        !createOrdersTableSql.sql.includes("'loan'")
-      ) {
-        console.log(
-          "Обновляем схему таблицы orders для добавления статуса 'loan'..."
-        );
-
-        // Временно отключаем foreign keys для безопасной миграции
-        db.pragma("foreign_keys = OFF");
-
-        // Начинаем транзакцию
-        db.exec(`
-          BEGIN TRANSACTION;
-          
-          -- Создаем временную таблицу с новой схемой
-          CREATE TABLE orders_backup (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            order_number TEXT UNIQUE NOT NULL,
-            supplier_id INTEGER NOT NULL,
-            item_id INTEGER NOT NULL,
-            date TEXT NOT NULL,
-            description TEXT,
-            measurement TEXT DEFAULT 'm3',
-            value REAL NOT NULL,
-            price_per_unit REAL,
-            total_price REAL,
-            status TEXT DEFAULT 'paid' CHECK (status IN ('paid', 'on_way', 'warehouse', 'sold', 'loan')),
-            containers INTEGER,
-            container_loads TEXT,
-            transportation_cost REAL,
-            customer_fee REAL,
-            created_at TEXT DEFAULT (datetime('now')),
-            FOREIGN KEY (supplier_id) REFERENCES suppliers (id),
-            FOREIGN KEY (item_id) REFERENCES supplier_items (id)
-          );
-          
-          -- Копируем данные
-          INSERT INTO orders_backup 
-          SELECT id, order_number, supplier_id, item_id, date, description, measurement, value, price_per_unit, total_price, status, containers, container_loads, transportation_cost, customer_fee, created_at 
-          FROM orders;
-          
-          -- Удаляем старую таблицу
-          DROP TABLE orders;
-          
-          -- Переименовываем новую таблицу
-          ALTER TABLE orders_backup RENAME TO orders;
-          
-          COMMIT;
-        `);
-
-        // Включаем обратно foreign keys
-        db.pragma("foreign_keys = ON");
-        console.log("Схема таблицы orders обновлена!");
-      }
-    }
-  } catch (e) {
-    console.log("Ошибка при миграции orders:", e);
-    // В случае ошибки включаем обратно foreign keys
-    db.pragma("foreign_keys = ON");
-  }
-
-  // Таблица пользователей
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
+async function createTables() {
+  const tables = [
+    // Таблица пользователей
+    `CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      username VARCHAR(255) UNIQUE NOT NULL,
       password TEXT NOT NULL,
-      role TEXT NOT NULL CHECK (role IN ('admin', 'partner', 'user', 'manager')),
+      role VARCHAR(50) NOT NULL CHECK (role IN ('admin', 'partner', 'user', 'manager')),
       name TEXT NOT NULL,
       email TEXT,
       phone TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       is_active BOOLEAN DEFAULT true
-    )
-  `);
+    )`,
 
-  // Таблица партнеров
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS partners (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
+    // Таблица партнеров
+    `CREATE TABLE IF NOT EXISTS partners (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       description TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES users (id)
-    )
-  `);
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
 
-  // Таблица поставщиков
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS suppliers (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+    // Таблица поставщиков
+    `CREATE TABLE IF NOT EXISTS suppliers (
+      id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
       contact_person TEXT,
       phone TEXT NOT NULL,
       email TEXT,
       address TEXT,
       description TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
-    )
-  `);
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
 
-  // Таблица товаров поставщиков
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS supplier_items (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      supplier_id INTEGER NOT NULL,
+    // Таблица товаров поставщиков
+    `CREATE TABLE IF NOT EXISTS supplier_items (
+      id SERIAL PRIMARY KEY,
+      supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (supplier_id) REFERENCES suppliers (id) ON DELETE CASCADE
-    )
-  `);
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
 
-  // Таблица заказов
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS orders (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      order_number TEXT UNIQUE NOT NULL,
-      supplier_id INTEGER NOT NULL,
-      item_id INTEGER NOT NULL,
-      date TEXT NOT NULL,
+    // Таблица заказов
+    `CREATE TABLE IF NOT EXISTS orders (
+      id SERIAL PRIMARY KEY,
+      order_number VARCHAR(255) UNIQUE NOT NULL,
+      supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+      item_id INTEGER NOT NULL REFERENCES supplier_items(id),
+      date DATE NOT NULL,
       description TEXT,
-      measurement TEXT DEFAULT 'm3',
-      value REAL NOT NULL,
-      price_per_unit REAL,
-      total_price REAL,
-      status TEXT DEFAULT 'paid' CHECK (status IN ('paid', 'on_way', 'warehouse', 'sold', 'loan')),
+      measurement VARCHAR(10) DEFAULT 'm3',
+      value DECIMAL(10,2) NOT NULL,
+      price_per_unit DECIMAL(10,2),
+      total_price DECIMAL(10,2),
+      status VARCHAR(20) DEFAULT 'paid' CHECK (status IN ('paid', 'on_way', 'warehouse', 'sold', 'loan')),
       containers INTEGER,
-      container_loads TEXT,
-      transportation_cost REAL,
-      customer_fee REAL,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (supplier_id) REFERENCES suppliers (id),
-      FOREIGN KEY (item_id) REFERENCES supplier_items (id)
-    )
-  `);
+      container_loads JSONB,
+      transportation_cost DECIMAL(10,2),
+      customer_fee DECIMAL(10,2),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
 
-  // Проверяем и обновляем схему займов
-  try {
-    // Пытаемся получить схему таблицы loans
-    const tableInfo = db.prepare("PRAGMA table_info(loans)").all() as any[];
-    const orderIdColumn = tableInfo.find((col) => col.name === "order_id");
+    // Таблица займов
+    `CREATE TABLE IF NOT EXISTS loans (
+      id SERIAL PRIMARY KEY,
+      partner_id INTEGER NOT NULL REFERENCES partners(id),
+      order_id INTEGER REFERENCES orders(id),
+      amount DECIMAL(10,2) NOT NULL,
+      is_paid BOOLEAN DEFAULT false,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
 
-    if (orderIdColumn && orderIdColumn.notnull === 1) {
-      // Если order_id NOT NULL, пересоздаем таблицу
-      console.log("Обновляем схему таблицы loans...");
-
-      db.exec(`
-        -- Создаем временную таблицу с новой схемой
-        CREATE TABLE loans_new (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          partner_id INTEGER NOT NULL,
-          order_id INTEGER,
-          amount REAL NOT NULL,
-          is_paid BOOLEAN DEFAULT false,
-          created_at TEXT DEFAULT (datetime('now')),
-          FOREIGN KEY (partner_id) REFERENCES partners (id),
-          FOREIGN KEY (order_id) REFERENCES orders (id)
-        );
-        
-        -- Копируем данные из старой таблицы
-        INSERT INTO loans_new (id, partner_id, order_id, amount, is_paid, created_at)
-        SELECT id, partner_id, order_id, amount, is_paid, created_at FROM loans;
-        
-        -- Удаляем старую таблицу
-        DROP TABLE loans;
-        
-        -- Переименовываем новую таблицу
-        ALTER TABLE loans_new RENAME TO loans;
-      `);
-
-      console.log("Схема таблицы loans обновлена!");
-    }
-  } catch (error) {
-    // Если таблица не существует, создаем ее с правильной схемой
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS loans (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        partner_id INTEGER NOT NULL,
-        order_id INTEGER,
-        amount REAL NOT NULL,
-        is_paid BOOLEAN DEFAULT false,
-        created_at TEXT DEFAULT (datetime('now')),
-        FOREIGN KEY (partner_id) REFERENCES partners (id),
-        FOREIGN KEY (order_id) REFERENCES orders (id)
-      )
-    `);
-  }
-
-  // Таблица продаж
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS sales (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      order_id INTEGER NOT NULL,
+    // Таблица продаж
+    `CREATE TABLE IF NOT EXISTS sales (
+      id SERIAL PRIMARY KEY,
+      order_id INTEGER NOT NULL REFERENCES orders(id),
       buyer_name TEXT,
-      sale_value REAL NOT NULL,
-      sale_price REAL NOT NULL,
+      sale_value DECIMAL(10,2) NOT NULL,
+      sale_price DECIMAL(10,2) NOT NULL,
       description TEXT,
-      date TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (order_id) REFERENCES orders (id)
-    )
-  `);
+      date DATE NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
 
-  // Таблица расходов (для отслеживания потраченных средств без изменения займов)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS expenses (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      amount REAL NOT NULL,
+    // Таблица расходов
+    `CREATE TABLE IF NOT EXISTS expenses (
+      id SERIAL PRIMARY KEY,
+      amount DECIMAL(10,2) NOT NULL,
       description TEXT,
-      type TEXT NOT NULL CHECK (type IN ('order', 'transportation', 'customs', 'other')),
+      type VARCHAR(50) NOT NULL CHECK (type IN ('order', 'transportation', 'customs', 'other')),
       related_id INTEGER,
-      created_at TEXT DEFAULT (datetime('now'))
-    )
-  `);
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
 
-  // Таблица логов активности
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS activity_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER,
+    // Таблица логов активности
+    `CREATE TABLE IF NOT EXISTS activity_logs (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id),
       action TEXT NOT NULL,
       entity_type TEXT NOT NULL,
       details TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES users (id)
-    )
-  `);
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
 
-  // Таблица переводов менеджеров
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS manager_transfers (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      from_manager_id INTEGER NOT NULL,
-      to_user_id INTEGER NOT NULL,
-      amount REAL NOT NULL,
+    // Таблица переводов менеджеров
+    `CREATE TABLE IF NOT EXISTS manager_transfers (
+      id SERIAL PRIMARY KEY,
+      from_manager_id INTEGER NOT NULL REFERENCES users(id),
+      to_user_id INTEGER NOT NULL REFERENCES users(id),
+      amount DECIMAL(10,2) NOT NULL,
       description TEXT,
-      status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
-      created_at TEXT DEFAULT (datetime('now')),
-      approved_by INTEGER,
-      approved_at TEXT,
-      FOREIGN KEY (from_manager_id) REFERENCES users (id),
-      FOREIGN KEY (to_user_id) REFERENCES users (id),
-      FOREIGN KEY (approved_by) REFERENCES users (id)
-    )
-  `);
+      status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      approved_by INTEGER REFERENCES users(id),
+      approved_at TIMESTAMP
+    )`,
 
-  // Таблица долгов поставщиков
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS supplier_debts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      supplier_id INTEGER NOT NULL,
-      item_id INTEGER NOT NULL,
-      order_id INTEGER NOT NULL,
-      debt_value REAL NOT NULL,
+    // Таблица долгов поставщиков
+    `CREATE TABLE IF NOT EXISTS supplier_debts (
+      id SERIAL PRIMARY KEY,
+      supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+      item_id INTEGER NOT NULL REFERENCES supplier_items(id),
+      order_id INTEGER NOT NULL REFERENCES orders(id),
+      debt_value DECIMAL(10,2) NOT NULL,
       is_settled BOOLEAN DEFAULT false,
-      created_at TEXT DEFAULT (datetime('now')),
-      settled_at TEXT,
-      FOREIGN KEY (supplier_id) REFERENCES suppliers (id),
-      FOREIGN KEY (item_id) REFERENCES supplier_items (id),
-      FOREIGN KEY (order_id) REFERENCES orders (id)
-    )
-  `);
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      settled_at TIMESTAMP
+    )`,
 
-  // Таблица продаж менеджеров
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS manager_sales (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      manager_id INTEGER NOT NULL,
-      related_sale_id INTEGER NOT NULL,
-      sale_value REAL NOT NULL,
-      sale_price REAL NOT NULL,
+    // Таблица продаж менеджеров
+    `CREATE TABLE IF NOT EXISTS manager_sales (
+      id SERIAL PRIMARY KEY,
+      manager_id INTEGER NOT NULL REFERENCES users(id),
+      related_sale_id INTEGER NOT NULL REFERENCES sales(id),
+      sale_value DECIMAL(10,2) NOT NULL,
+      sale_price DECIMAL(10,2) NOT NULL,
       buyer_name TEXT NOT NULL,
       description TEXT,
-      date TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (manager_id) REFERENCES users (id),
-      FOREIGN KEY (related_sale_id) REFERENCES sales (id)
-    )
-  `);
+      date DATE NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+  ];
 
-  // Создаем администратора по умолчанию
-  const adminExists = db
-    .prepare("SELECT id FROM users WHERE username = 'admin'")
-    .get();
-  if (!adminExists) {
-    const bcrypt = require("bcryptjs");
-    const hashedPassword = bcrypt.hashSync("admin", 10);
-
-    db.prepare(
-      `
-      INSERT INTO users (username, password, role, name, email)
-      VALUES ('admin', ?, 'admin', 'Администратор', 'admin@drevmaster.com')
-    `
-    ).run(hashedPassword);
-
-    console.log("Создан пользователь admin с паролем: admin");
+  for (const table of tables) {
+    await query(table);
   }
 }
 
-// Экспортируем базу данных
-export { db };
+async function createDefaultAdmin() {
+  try {
+    // Проверяем, существует ли администратор
+    const adminResult = await query(
+      "SELECT id FROM users WHERE username = $1",
+      ["admin"]
+    );
+
+    if (adminResult.rows && adminResult.rows.length === 0) {
+      const hashedPassword = await bcrypt.hash("admin", 10);
+
+      await query(
+        `INSERT INTO users (username, password, role, name, email)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          "admin",
+          hashedPassword,
+          "admin",
+          "Администратор",
+          "admin@drevmaster.com",
+        ]
+      );
+
+      console.log("Создан пользователь admin с паролем: admin");
+    }
+  } catch (error) {
+    console.error("Ошибка создания администратора:", error);
+  }
+}
+
+// Утилитарные функции для работы с базой данных
+export class DatabaseService {
+  // Пользователи
+  static async getUsers() {
+    const result = await query("SELECT * FROM users ORDER BY created_at DESC");
+    return result.rows;
+  }
+
+  static async getUserById(id: number) {
+    const result = await query("SELECT * FROM users WHERE id = $1", [id]);
+    return result.rows[0];
+  }
+
+  static async getUserByUsername(username: string) {
+    const result = await query("SELECT * FROM users WHERE username = $1", [
+      username,
+    ]);
+    return result.rows[0];
+  }
+
+  // Поставщики
+  static async getSuppliers() {
+    const result = await query(
+      "SELECT * FROM suppliers ORDER BY created_at DESC"
+    );
+    return result.rows;
+  }
+
+  static async getSupplierById(id: number) {
+    const result = await query("SELECT * FROM suppliers WHERE id = $1", [id]);
+    return result.rows[0];
+  }
+
+  // Заказы
+  static async getOrders() {
+    const result = await query(`
+      SELECT o.*, s.name as supplier_name, si.name as item_name 
+      FROM orders o
+      JOIN suppliers s ON o.supplier_id = s.id
+      JOIN supplier_items si ON o.item_id = si.id
+      ORDER BY o.created_at DESC
+    `);
+    return result.rows;
+  }
+
+  static async getOrderById(id: number) {
+    const result = await query("SELECT * FROM orders WHERE id = $1", [id]);
+    return result.rows[0];
+  }
+
+  // Займы
+  static async getLoans() {
+    const result = await query(`
+      SELECT l.*, u.name as partner_name 
+      FROM loans l
+      JOIN partners p ON l.partner_id = p.id
+      JOIN users u ON p.user_id = u.id
+      ORDER BY l.created_at DESC
+    `);
+    return result.rows;
+  }
+
+  // Логи активности
+  static async addActivityLog(
+    userId: number,
+    action: string,
+    entityType: string,
+    details?: string
+  ) {
+    await query(
+      "INSERT INTO activity_logs (user_id, action, entity_type, details) VALUES ($1, $2, $3, $4)",
+      [userId, action, entityType, details]
+    );
+  }
+}
+
+// Экспортируем инициализацию для использования при старте приложения
+export default DatabaseService;
