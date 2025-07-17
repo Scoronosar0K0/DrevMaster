@@ -7,16 +7,9 @@
     }
   },
   "env": {
-    "DATABASE_URL": "@database-url",
-    "JWT_SECRET": "@jwt-secret",
-    "NEXTAUTH_SECRET": "@nextauth-secret",
-    "NEXTAUTH_URL": "@nextauth-url"
+    "SKIP_ENV_VALIDATION": "1"
   },
-  "build": {
-    "env": {
-      "SKIP_ENV_VALIDATION": "1"
-    }
-  },
+
   "headers": [
     {
       "source": "/api/(.*)",
