@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
 
     // Устанавливаем cookie с токеном
     response.cookies.set("auth-token", token, {
-      httpOnly: true,
+      httpOnly: false, // Изменено на false для отладки
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60, // 7 дней

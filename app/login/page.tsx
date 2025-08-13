@@ -67,8 +67,8 @@ export default function LoginPage() {
 
         // Небольшая задержка для показа сообщения об успехе
         setTimeout(() => {
-          // Принудительная перезагрузка для обновления cookie в middleware
-          window.location.href = "/";
+          // Перенаправляем на главную страницу
+          router.push("/");
         }, 1000);
       } else {
         setError(data.error);
