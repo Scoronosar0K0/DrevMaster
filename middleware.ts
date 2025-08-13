@@ -33,13 +33,7 @@ export function middleware(request: NextRequest) {
     }
   }
 
-  // Отладочная информация
-  console.log("Middleware - Path:", pathname);
-  console.log("Middleware - Token exists:", !!token);
-  console.log("Middleware - Cookies:", request.cookies.getAll());
-
   if (!token) {
-    console.log("Middleware - Redirecting to login (no token)");
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
@@ -52,10 +46,6 @@ async function verifyToken(token: string, request: NextRequest) {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const userRole = payload.role as string;
     const { pathname } = request.nextUrl;
-
-    console.log("Middleware - Token verified successfully");
-    console.log("Middleware - User role:", userRole);
-    console.log("Middleware - Pathname:", pathname);
 
     // Ограничения для менеджеров
     if (userRole === "manager") {
@@ -71,22 +61,17 @@ async function verifyToken(token: string, request: NextRequest) {
 
       // Если менеджер пытается получить доступ к запрещенной странице
       if (restrictedPaths.some((path) => pathname.startsWith(path))) {
-        console.log("Middleware - Manager accessing restricted path, redirecting to /manager");
         return NextResponse.redirect(new URL("/manager", request.url));
       }
 
       // Перенаправляем менеджеров с главной страницы на их dashboard
       if (pathname === "/") {
-        console.log("Middleware - Manager on root, redirecting to /manager");
         return NextResponse.redirect(new URL("/manager", request.url));
       }
     }
-
-    console.log("Middleware - Access granted");
     return NextResponse.next();
   } catch (error) {
     // Если токен недействительный, перенаправляем на логин
-    console.log("Middleware - Token verification failed:", error);
     return NextResponse.redirect(new URL("/login", request.url));
   }
 }
