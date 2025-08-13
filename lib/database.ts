@@ -323,7 +323,21 @@ export function initDatabase() {
     )
   `);
 
-  // Проверяем и обновляем схему займов
+  // Таблица займов
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS loans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      partner_id INTEGER NOT NULL,
+      order_id INTEGER,
+      amount REAL NOT NULL,
+      is_paid BOOLEAN DEFAULT false,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (partner_id) REFERENCES partners (id),
+      FOREIGN KEY (order_id) REFERENCES orders (id)
+    )
+  `);
+
+  // Проверяем и обновляем схему займов если нужно
   try {
     // Пытаемся получить схему таблицы loans
     const tableInfo = db.prepare("PRAGMA table_info(loans)").all() as any[];
@@ -360,19 +374,7 @@ export function initDatabase() {
       console.log("Схема таблицы loans обновлена!");
     }
   } catch (error) {
-    // Если таблица не существует, создаем ее с правильной схемой
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS loans (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        partner_id INTEGER NOT NULL,
-        order_id INTEGER,
-        amount REAL NOT NULL,
-        is_paid BOOLEAN DEFAULT false,
-        created_at TEXT DEFAULT (datetime('now')),
-        FOREIGN KEY (partner_id) REFERENCES partners (id),
-        FOREIGN KEY (order_id) REFERENCES orders (id)
-      )
-    `);
+    console.log("Ошибка при проверке схемы loans:", error);
   }
 
   // Таблица продаж
@@ -473,7 +475,7 @@ export function initDatabase() {
     .get();
   if (!adminExists) {
     const bcrypt = require("bcryptjs");
-    const hashedPassword = bcrypt.hashSync("admin", 10);
+    const hashedPassword = bcrypt.hashSync("admin123", 10);
 
     db.prepare(
       `
@@ -482,7 +484,7 @@ export function initDatabase() {
     `
     ).run(hashedPassword);
 
-    console.log("Создан пользователь admin с паролем: admin");
+    console.log("Создан пользователь admin с паролем: admin123");
   }
 }
 
