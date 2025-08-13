@@ -51,8 +51,8 @@ ssh root@194.87.201.205 << 'EOF'
     # Удаляем старую версию если есть
     rm -rf drevmaster
     
-    # Клонируем репозиторий (замените на ваш URL)
-    git clone https://github.com/your-username/drevmaster.git
+    # Клонируем репозиторий
+    git clone https://github.com/Scoronosar0K0/drevmaster.git
     cd drevmaster
 EOF
 

@@ -8,7 +8,7 @@
 
 ```bash
 # Клонирование репозитория
-git clone https://github.com/your-username/drevmaster.git
+git clone https://github.com/Scoronosar0K0/drevmaster.git
 cd drevmaster
 
 # Установка зависимостей
@@ -32,7 +32,7 @@ curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
 apt-get install -y nodejs
 
 # Клонирование проекта
-git clone https://github.com/your-username/drevmaster.git
+git clone https://github.com/Scoronosar0K0/drevmaster.git
 cd drevmaster
 
 # Установка зависимостей

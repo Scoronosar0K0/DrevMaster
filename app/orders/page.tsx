@@ -47,6 +47,12 @@ interface ContainerLoad {
   value: number;
 }
 
+interface OrderContainer {
+  container: number;
+  value: number;
+  description: string;
+}
+
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -312,7 +318,7 @@ export default function OrdersPage() {
     return Math.max(0, formData.value - totalLoaded);
   };
 
-  const getOrderContainers = (order: Order) => {
+  const getOrderContainers = (order: Order): OrderContainer[] => {
     if (order.container_loads) {
       try {
         const loads = JSON.parse(order.container_loads);
@@ -1751,7 +1757,7 @@ export default function OrdersPage() {
                   </label>
                   <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto">
                     {getOrderContainers(selectedOrder).map(
-                      (container, index) => (
+                      (container: OrderContainer, index: number) => (
                         <div
                           key={index}
                           className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50"
