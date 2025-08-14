@@ -34,18 +34,23 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-      // Правильный расчет баланса: займы - расходы
+      // Правильный расчет баланса: займы + доходы - расходы
       const activeLoansResult = db
         .prepare("SELECT SUM(amount) as total FROM loans WHERE is_paid = false")
         .get() as { total: number | null };
       const activeLoans = activeLoansResult.total || 0;
 
       const expensesResult = db
-        .prepare("SELECT SUM(amount) as total FROM expenses")
+        .prepare("SELECT SUM(amount) as total FROM expenses WHERE amount > 0")
         .get() as { total: number | null };
       const totalExpenses = expensesResult.total || 0;
 
-      totalBalance = activeLoans - totalExpenses;
+      const incomeResult = db
+        .prepare("SELECT SUM(ABS(amount)) as total FROM expenses WHERE amount < 0")
+        .get() as { total: number | null };
+      const totalIncome = incomeResult.total || 0;
+
+      totalBalance = activeLoans + totalIncome - totalExpenses;
     } catch (e) {
       console.log("Таблица loans или expenses еще не создана");
     }

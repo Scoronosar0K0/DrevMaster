@@ -101,6 +101,7 @@ export default function OrdersPage() {
 
   const [customerFeeForm, setCustomerFeeForm] = useState({
     cost: 0,
+    value: 0,
   });
 
   const [sellForm, setSellForm] = useState({
@@ -454,7 +455,7 @@ export default function OrdersPage() {
       setTransportForm({ cost: 0, selectedContainers: [] });
       setShowTransportDialog(true);
     } else if (order.status === "on_way") {
-      setCustomerFeeForm({ cost: 0 });
+      setCustomerFeeForm({ cost: 0, value: order.value });
       setShowCustomerFeeDialog(true);
     } else if (order.status === "warehouse") {
       setSellForm({
@@ -1508,23 +1509,46 @@ export default function OrdersPage() {
               <p className="text-sm text-gray-600 mb-4">
                 Заказ: {selectedOrder.order_number}
               </p>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Стоимость таможенного сбора ($)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={customerFeeForm.cost}
-                  onChange={(e) =>
-                    setCustomerFeeForm({
-                      cost: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="input-field w-full"
-                  placeholder="0.00"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Объем ({selectedOrder.measurement})
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max={selectedOrder.value}
+                    value={customerFeeForm.value || selectedOrder.value}
+                    onChange={(e) =>
+                      setCustomerFeeForm({
+                        ...customerFeeForm,
+                        value: parseFloat(e.target.value) || selectedOrder.value,
+                      })
+                    }
+                    className="input-field w-full"
+                    placeholder={selectedOrder.value.toString()}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Стоимость таможенного сбора ($)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={customerFeeForm.cost}
+                    onChange={(e) =>
+                      setCustomerFeeForm({
+                        ...customerFeeForm,
+                        cost: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                    className="input-field w-full"
+                    placeholder="0.00"
+                  />
+                </div>
               </div>
               <div className="flex space-x-3 mt-6">
                 <button

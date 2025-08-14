@@ -105,11 +105,16 @@ export async function POST(request: NextRequest) {
     const totalLoans = loansResult.total || 0;
 
     const expensesResult = db
-      .prepare("SELECT SUM(amount) as total FROM expenses")
+      .prepare("SELECT SUM(amount) as total FROM expenses WHERE amount > 0")
       .get() as { total: number | null };
     const totalExpenses = expensesResult.total || 0;
 
-    const currentBalance = totalLoans - totalExpenses;
+    const incomeResult = db
+      .prepare("SELECT SUM(ABS(amount)) as total FROM expenses WHERE amount < 0")
+      .get() as { total: number | null };
+    const totalIncome = incomeResult.total || 0;
+
+    const currentBalance = totalLoans + totalIncome - totalExpenses;
 
     // Проверяем, достаточно ли средств
     if (total_price > currentBalance) {

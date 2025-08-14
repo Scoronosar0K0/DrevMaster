@@ -9,21 +9,21 @@ export async function POST() {
     const transaction = db.transaction(() => {
       // Список всех таблиц для очистки (в порядке зависимостей)
       const tables = [
-        'activity_logs',
-        'manager_sales', 
-        'manager_transfers',
-        'supplier_debts',
-        'expenses',
-        'sales',
-        'loans',
-        'orders',
-        'supplier_items',
-        'suppliers',
-        'partners'
+        "activity_logs",
+        "manager_sales",
+        "manager_transfers",
+        "supplier_debts",
+        "expenses",
+        "sales",
+        "loans",
+        "orders",
+        "supplier_items",
+        "suppliers",
+        "partners",
       ];
 
       // Удаляем все данные из таблиц (безопасно, игнорируем отсутствующие таблицы)
-      tables.forEach(table => {
+      tables.forEach((table) => {
         try {
           db.prepare(`DELETE FROM ${table}`).run();
           console.log(`Очищена таблица: ${table}`);
@@ -42,7 +42,7 @@ export async function POST() {
 
       // Очищаем счетчики автоинкремента для всех таблиц
       try {
-        const tableNames = tables.map(t => `'${t}'`).join(', ');
+        const tableNames = tables.map((t) => `'${t}'`).join(", ");
         db.prepare(
           `UPDATE sqlite_sequence SET seq = 0 WHERE name IN (${tableNames})`
         ).run();

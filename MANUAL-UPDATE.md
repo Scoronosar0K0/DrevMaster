@@ -39,7 +39,7 @@ pm2 restart DREVMASTER
 pm2 stop DREVMASTER
 
 # Удалить старую базу данных (ВНИМАНИЕ: Это удалит все данные!)
-rm -f DREVMASTER.db
+rm -f drevmaster.db
 
 # Запустить приложение заново (база создастся с нуля)
 pm2 start DREVMASTER
