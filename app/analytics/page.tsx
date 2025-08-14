@@ -253,6 +253,64 @@ export default function AnalyticsPage() {
             </div>
           </div>
 
+          {/* Топ покупатели */}
+          <div className="bg-white rounded-xl p-6 shadow-lg">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">
+              Топ покупатели (прямые продажи)
+            </h3>
+            <div className="space-y-3">
+              {data.topBuyers?.map((buyer, index) => (
+                <div key={index} className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <span className="w-6 h-6 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center text-sm font-bold mr-3">
+                      {index + 1}
+                    </span>
+                    <span className="font-medium text-gray-900">
+                      {buyer.buyer_name}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-bold text-gray-900">
+                      ${buyer.totalSpent?.toFixed(2)}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {buyer.orderCount} заказов
+                    </div>
+                  </div>
+                </div>
+              )) || <p className="text-gray-500">Нет данных</p>}
+            </div>
+          </div>
+
+          {/* Топ покупатели менеджеров */}
+          <div className="bg-white rounded-xl p-6 shadow-lg">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">
+              Покупатели менеджеров
+            </h3>
+            <div className="space-y-3">
+              {data.topManagerBuyers?.map((buyer, index) => (
+                <div key={index} className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <span className="w-6 h-6 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center text-sm font-bold mr-3">
+                      {index + 1}
+                    </span>
+                    <span className="font-medium text-gray-900">
+                      {buyer.buyer_name}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-bold text-gray-900">
+                      ${buyer.totalSpent?.toFixed(2)}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {buyer.orderCount} покупок
+                    </div>
+                  </div>
+                </div>
+              )) || <p className="text-gray-500">Нет данных</p>}
+            </div>
+          </div>
+
           {/* Последняя активность */}
           <div className="bg-white rounded-xl p-6 shadow-lg">
             <h3 className="text-lg font-bold text-gray-900 mb-4">

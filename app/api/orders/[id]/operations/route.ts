@@ -91,12 +91,33 @@ export async function GET(
       )
       .all(orderId) as any[];
 
+    // Получаем продажи менеджеров связанные с этим заказом
+    const managerSales = db
+      .prepare(
+        `
+        SELECT 
+          'продажа_менеджера' as action,
+          'Менеджер ' || u.name || ': продажа ' || ms.sale_value || ' ' || o.measurement || 
+          ' за $' || ms.sale_price || ' покупателю ' || ms.buyer_name as details,
+          ms.date as created_at,
+          ms.sale_price as amount
+        FROM manager_sales ms
+        JOIN users u ON ms.manager_id = u.id
+        JOIN sales s ON ms.related_sale_id = s.id
+        JOIN orders o ON s.order_id = o.id
+        WHERE o.id = ?
+        ORDER BY ms.date ASC
+      `
+      )
+      .all(orderId) as any[];
+
     // Объединяем все операции
     const allOperations = [
       ...activityLogs,
       ...expenses,
       ...transportationExpenses,
       ...customsExpenses,
+      ...managerSales,
     ];
 
     // Сортируем по дате

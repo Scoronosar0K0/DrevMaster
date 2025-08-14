@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
         ) sold_sum ON s.id = sold_sum.related_sale_id
         WHERE p.user_id = ?
         AND s.buyer_name = ?
-        AND l.is_paid = false
+        AND (s.sale_value - COALESCE(sold_sum.total_sold, 0)) > 0
         ORDER BY s.date DESC
       `
       )

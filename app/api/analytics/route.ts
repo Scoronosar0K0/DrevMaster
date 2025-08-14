@@ -218,6 +218,41 @@ export async function GET(request: NextRequest) {
         )
         .all() as any[];
 
+      // Топ покупатели (исключая менеджеров)
+      const topBuyers = db
+        .prepare(
+          `
+          SELECT 
+            s.buyer_name,
+            COUNT(s.id) as orderCount,
+            SUM(s.sale_price) as totalSpent
+          FROM sales s
+          LEFT JOIN users u ON s.buyer_name = u.name
+          WHERE (u.role IS NULL OR u.role != 'manager') ${dateFilter.replace("created_at", "s.created_at")}
+          GROUP BY s.buyer_name
+          ORDER BY totalSpent DESC
+          LIMIT 5
+        `
+        )
+        .all() as any[];
+
+      // Топ покупатели менеджеров (кому продают менеджеры)
+      const topManagerBuyers = db
+        .prepare(
+          `
+          SELECT 
+            ms.buyer_name,
+            COUNT(ms.id) as orderCount,
+            SUM(ms.sale_price) as totalSpent
+          FROM manager_sales ms
+          WHERE 1=1 ${dateFilter.replace("created_at", "ms.date")}
+          GROUP BY ms.buyer_name
+          ORDER BY totalSpent DESC
+          LIMIT 5
+        `
+        )
+        .all() as any[];
+
       // Последняя активность
       const recentActivity = db
         .prepare(
@@ -245,6 +280,14 @@ export async function GET(request: NextRequest) {
         topItems: (topItems || []).map((i) => ({
           ...i,
           totalValue: Number(i.totalValue || 0),
+        })),
+        topBuyers: (topBuyers || []).map((b) => ({
+          ...b,
+          totalSpent: Number(b.totalSpent || 0),
+        })),
+        topManagerBuyers: (topManagerBuyers || []).map((b) => ({
+          ...b,
+          totalSpent: Number(b.totalSpent || 0),
         })),
         recentActivity: recentActivity || [],
       };

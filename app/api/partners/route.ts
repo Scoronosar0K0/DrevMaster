@@ -19,7 +19,7 @@ export async function GET() {
         p.created_at
       FROM partners p
       JOIN users u ON p.user_id = u.id
-      WHERE u.is_active = true
+      WHERE u.is_active = true AND u.role != 'manager'
       ORDER BY p.created_at DESC
     `
       )
