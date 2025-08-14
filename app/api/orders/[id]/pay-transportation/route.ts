@@ -63,7 +63,7 @@ export async function POST(
 
     // Начинаем транзакцию
     const transaction = db.transaction(() => {
-      // Добавляем расход вместо изменения займов
+      // Добавляем расход
       const insertExpense = db.prepare(`
         INSERT INTO expenses (amount, description, type, related_id)
         VALUES (?, ?, 'transportation', ?)
@@ -74,42 +74,75 @@ export async function POST(
         orderId
       );
 
-      // Создаем новый контейнер для отправки
-      const containerData = {
-        value: value,
-        description: `Контейнер для заказа ${order.order_number}`,
-        measurement: order.measurement,
-        item_name: `Доставка: ${order.order_number}`,
-        cost: cost,
-        status: "on_way",
-      };
+      if (value === order.value) {
+        // Полная оплата транспорта - обновляем весь заказ
+        const update = db.prepare(`
+          UPDATE orders 
+          SET transportation_cost = COALESCE(transportation_cost, 0) + ?, 
+              total_price = COALESCE(total_price, 0) + ?,
+              status = 'on_way'
+          WHERE id = ?
+        `);
+        update.run(cost, cost, orderId);
 
-      // Если у заказа есть container_loads, добавляем новый контейнер
-      let containerLoads = [];
-      if (order.container_loads) {
-        containerLoads = JSON.parse(order.container_loads);
+        // Логируем активность
+        const insertLog = db.prepare(`
+          INSERT INTO activity_logs (user_id, action, entity_type, details)
+          VALUES (1, 'оплата_транспорта_полная', 'order', ?)
+        `);
+        insertLog.run(
+          `Заказ ${order.order_number}: полная оплата транспортировки $${cost} для ${value} ${order.measurement}`
+        );
+      } else {
+        // Частичная оплата - разделяем заказ
+        const remainingValue = order.value - value;
+        const pricePerUnit = order.total_price / order.value;
+        
+        // Создаем новый заказ для оплаченной части (в пути)
+        const newOrderNumber = `${order.order_number}-T${Math.floor(Date.now() / 1000)}`;
+        const newOrderPrice = value * pricePerUnit;
+        
+        const insertNewOrder = db.prepare(`
+          INSERT INTO orders (
+            order_number, supplier_id, item_id, date, description, measurement,
+            value, price_per_unit, total_price, status, containers, 
+            transportation_cost, created_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'on_way', ?, ?, datetime('now'))
+        `);
+        
+        insertNewOrder.run(
+          newOrderNumber,
+          order.supplier_id,
+          order.item_id,
+          order.date,
+          `Транспортировка из ${order.order_number}`,
+          order.measurement,
+          value,
+          order.price_per_unit,
+          newOrderPrice + cost,
+          1,
+          cost
+        );
+
+        // Обновляем исходный заказ (убираем оплаченный объем)
+        const remainingPrice = remainingValue * pricePerUnit;
+        const updateOriginalOrder = db.prepare(`
+          UPDATE orders 
+          SET value = ?, total_price = ?
+          WHERE id = ?
+        `);
+        updateOriginalOrder.run(remainingValue, remainingPrice, orderId);
+
+        // Логируем активность
+        const insertLog = db.prepare(`
+          INSERT INTO activity_logs (user_id, action, entity_type, details)
+          VALUES (1, 'оплата_транспорта_частичная', 'order', ?)
+        `);
+        insertLog.run(
+          `Заказ ${order.order_number}: частичная оплата транспортировки $${cost} для ${value} ${order.measurement}. Создан новый заказ ${newOrderNumber} (в пути). Остаток: ${remainingValue} ${order.measurement}`
+        );
       }
-      containerLoads.push(containerData);
-
-      // Обновляем заказ со статусом "в пути"
-      const update = db.prepare(`
-        UPDATE orders 
-        SET transportation_cost = COALESCE(transportation_cost, 0) + ?, 
-            total_price = COALESCE(total_price, 0) + ?,
-            status = 'on_way',
-            container_loads = ?
-        WHERE id = ?
-      `);
-      update.run(cost, cost, JSON.stringify(containerLoads), orderId);
-
-      // Логируем активность
-      const insertLog = db.prepare(`
-        INSERT INTO activity_logs (user_id, action, entity_type, details)
-        VALUES (1, 'оплата_транспорта', 'order', ?)
-      `);
-      insertLog.run(
-        `Заказ ${order.order_number}: оплата транспортировки $${cost} для ${value} ${order.measurement}. Создан контейнер.`
-      );
     });
 
     transaction();

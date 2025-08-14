@@ -9,7 +9,7 @@ export async function POST(
 ) {
   try {
     const body = await request.json();
-    const { cost } = body;
+    const { cost, value } = body;
     const orderId = parseInt(params.id);
 
     if (!cost || cost <= 0) {
@@ -27,6 +27,15 @@ export async function POST(
       return NextResponse.json(
         { error: "Заказ не найден или имеет неверный статус" },
         { status: 404 }
+      );
+    }
+
+    // Если указан объем, проверяем его
+    const customsValue = value || order.value;
+    if (customsValue > order.value) {
+      return NextResponse.json(
+        { error: "Объем таможенного оформления не может превышать объем заказа" },
+        { status: 400 }
       );
     }
 
@@ -56,7 +65,7 @@ export async function POST(
 
     // Начинаем транзакцию
     const transaction = db.transaction(() => {
-      // Добавляем расход вместо изменения займов
+      // Добавляем расход
       const insertExpense = db.prepare(`
         INSERT INTO expenses (amount, description, type, related_id)
         VALUES (?, ?, 'customs', ?)
@@ -67,25 +76,76 @@ export async function POST(
         orderId
       );
 
-      // Обновляем заказ
-      const update = db.prepare(`
-        UPDATE orders 
-        SET customer_fee = ?, 
-            total_price = COALESCE(total_price, 0) + ?,
-            status = 'warehouse'
-        WHERE id = ?
-      `);
+      if (customsValue === order.value) {
+        // Полная оплата таможни - обновляем весь заказ
+        const update = db.prepare(`
+          UPDATE orders 
+          SET customer_fee = COALESCE(customer_fee, 0) + ?, 
+              total_price = COALESCE(total_price, 0) + ?,
+              status = 'warehouse'
+          WHERE id = ?
+        `);
+        update.run(cost, cost, orderId);
 
-      update.run(cost, cost, orderId);
+        // Логируем активность
+        const insertLog = db.prepare(`
+          INSERT INTO activity_logs (user_id, action, entity_type, details)
+          VALUES (1, 'оплата_таможни_полная', 'order', ?)
+        `);
+        insertLog.run(
+          `Заказ ${order.order_number}: полная оплата таможни $${cost} для ${customsValue} ${order.measurement}`
+        );
+      } else {
+        // Частичная оплата - разделяем заказ
+        const remainingValue = order.value - customsValue;
+        const pricePerUnit = order.total_price / order.value;
+        
+        // Создаем новый заказ для оплаченной части (на складе)
+        const newOrderNumber = `${order.order_number}-C${Math.floor(Date.now() / 1000)}`;
+        const newOrderPrice = customsValue * pricePerUnit;
+        
+        const insertNewOrder = db.prepare(`
+          INSERT INTO orders (
+            order_number, supplier_id, item_id, date, description, measurement,
+            value, price_per_unit, total_price, status, containers, 
+            transportation_cost, customer_fee, created_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'warehouse', ?, ?, ?, datetime('now'))
+        `);
+        
+        insertNewOrder.run(
+          newOrderNumber,
+          order.supplier_id,
+          order.item_id,
+          order.date,
+          `Таможня из ${order.order_number}`,
+          order.measurement,
+          customsValue,
+          order.price_per_unit,
+          newOrderPrice + cost,
+          1,
+          order.transportation_cost || 0,
+          cost
+        );
 
-      // Логируем активность
-      const insertLog = db.prepare(`
-        INSERT INTO activity_logs (user_id, action, entity_type, details)
-        VALUES (1, 'оплата_таможни', 'order', ?)
-      `);
-      insertLog.run(
-        `Заказ ${order.order_number}: оплачен таможенный сбор $${cost}`
-      );
+        // Обновляем исходный заказ (убираем оплаченный объем)
+        const remainingPrice = remainingValue * pricePerUnit;
+        const updateOriginalOrder = db.prepare(`
+          UPDATE orders 
+          SET value = ?, total_price = ?
+          WHERE id = ?
+        `);
+        updateOriginalOrder.run(remainingValue, remainingPrice, orderId);
+
+        // Логируем активность
+        const insertLog = db.prepare(`
+          INSERT INTO activity_logs (user_id, action, entity_type, details)
+          VALUES (1, 'оплата_таможни_частичная', 'order', ?)
+        `);
+        insertLog.run(
+          `Заказ ${order.order_number}: частичная оплата таможни $${cost} для ${customsValue} ${order.measurement}. Создан новый заказ ${newOrderNumber} (на складе). Остаток: ${remainingValue} ${order.measurement}`
+        );
+      }
     });
 
     transaction();

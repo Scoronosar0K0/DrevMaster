@@ -1,10 +1,13 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db, initDatabase } from "@/lib/database";
 
 // Инициализируем базу данных при первом запросе
 initDatabase();
 
-export async function GET() {
+// Принудительно делаем эндпоинт динамическим
+export const dynamic = 'force-dynamic';
+
+export async function GET(request: NextRequest) {
   try {
     // Убедимся, что таблицы существуют, если нет - возвращаем нули
     let totalOrders = 0;
@@ -31,12 +34,20 @@ export async function GET() {
     }
 
     try {
-      const totalBalanceResult = db
+      // Правильный расчет баланса: займы - расходы
+      const activeLoansResult = db
         .prepare("SELECT SUM(amount) as total FROM loans WHERE is_paid = false")
         .get() as { total: number | null };
-      totalBalance = totalBalanceResult.total || 0;
+      const activeLoans = activeLoansResult.total || 0;
+
+      const expensesResult = db
+        .prepare("SELECT SUM(amount) as total FROM expenses")
+        .get() as { total: number | null };
+      const totalExpenses = expensesResult.total || 0;
+
+      totalBalance = activeLoans - totalExpenses;
     } catch (e) {
-      console.log("Таблица loans еще не создана");
+      console.log("Таблица loans или expenses еще не создана");
     }
 
     try {

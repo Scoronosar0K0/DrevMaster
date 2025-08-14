@@ -1,9 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db, initDatabase } from "@/lib/database";
 
 initDatabase();
 
-export async function GET() {
+// Принудительно делаем эндпоинт динамическим
+export const dynamic = 'force-dynamic';
+
+export async function GET(request: NextRequest) {
   try {
     // Получаем общую сумму всех непогашенных займов от партнеров (деньги которые мы взяли и еще не вернули)
     const activeLoansResult = db
