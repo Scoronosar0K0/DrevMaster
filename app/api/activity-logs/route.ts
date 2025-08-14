@@ -5,12 +5,13 @@ initDatabase();
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const action = searchParams.get("action");
-    const entityType = searchParams.get("entity_type");
-    const user = searchParams.get("user");
-    const dateFrom = searchParams.get("date_from");
-    const dateTo = searchParams.get("date_to");
+    // Получаем параметры из URL без использования request.url для статической генерации
+    const url = new URL(request.nextUrl);
+    const action = url.searchParams.get("action");
+    const entityType = url.searchParams.get("entity_type");
+    const user = url.searchParams.get("user");
+    const dateFrom = url.searchParams.get("date_from");
+    const dateTo = url.searchParams.get("date_to");
 
     let query = `
       SELECT 

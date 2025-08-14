@@ -105,28 +105,40 @@ export async function POST(
               `Создан займ на сумму $${totalSalePrice} за покупку товара из заказа ${order.order_number}. Менеджер должен оплатить после перепродажи.`
             );
           } else {
-            // Менеджер не имеет записи партнера, добавляем в общий баланс
-            const insertLoan = db.prepare(`
-              INSERT INTO loans (partner_id, amount, is_paid)
-              VALUES (1, ?, false)
+            // Менеджер не имеет записи партнера, добавляем доход
+            const insertIncome = db.prepare(`
+              INSERT INTO expenses (amount, description, type, related_id, created_at)
+              VALUES (?, ?, 'other', ?, datetime('now'))
             `);
-            insertLoan.run(totalSalePrice);
+            insertIncome.run(
+              -totalSalePrice, // Отрицательная сумма = доход
+              `Продажа товара (партнер менеджера не найден) - доход $${totalSalePrice}`,
+              orderId
+            );
           }
         } else {
-          // Менеджер не найден, добавляем всю сумму в общий баланс
-          const insertLoan = db.prepare(`
-            INSERT INTO loans (partner_id, amount, is_paid)
-            VALUES (1, ?, false)
+          // Менеджер не найден, добавляем доход
+          const insertIncome = db.prepare(`
+            INSERT INTO expenses (amount, description, type, related_id, created_at)
+            VALUES (?, ?, 'other', ?, datetime('now'))
           `);
-          insertLoan.run(totalSalePrice);
+          insertIncome.run(
+            -totalSalePrice, // Отрицательная сумма = доход
+            `Продажа товара (менеджер не найден) - доход $${totalSalePrice}`,
+            orderId
+          );
         }
       } else {
-        // Обычная продажа без связи с менеджером
-        const insertLoan = db.prepare(`
-          INSERT INTO loans (partner_id, amount, is_paid)
-          VALUES (1, ?, false)
+        // Обычная продажа без связи с менеджером - создаем отрицательный расход (доход)
+        const insertIncome = db.prepare(`
+          INSERT INTO expenses (amount, description, type, related_id, created_at)
+          VALUES (?, ?, 'other', ?, datetime('now'))
         `);
-        insertLoan.run(totalSalePrice);
+        insertIncome.run(
+          -totalSalePrice, // Отрицательная сумма = доход
+          `Продажа товара покупателю ${buyer_name} - доход $${totalSalePrice}`,
+          orderId
+        );
       }
 
       if (value === order.value) {

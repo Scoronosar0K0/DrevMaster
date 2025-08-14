@@ -15,7 +15,7 @@ ssh root@194.87.201.205
 
 ```bash
 # Переходим в директорию приложения
-cd /var/www/drevmaster/drevmaster
+cd /var/www/DREVMASTER/DREVMASTER
 
 # Получаем последние изменения
 git pull origin main
@@ -27,7 +27,7 @@ npm install
 npm run build
 
 # Перезапускаем приложение
-pm2 restart drevmaster
+pm2 restart DREVMASTER
 ```
 
 ### 2.1 ИСПРАВЛЕНИЕ ТАБЛИЦЫ ACTIVITY_LOGS
@@ -36,23 +36,23 @@ pm2 restart drevmaster
 
 ```bash
 # Остановить приложение
-pm2 stop drevmaster
+pm2 stop DREVMASTER
 
 # Удалить старую базу данных (ВНИМАНИЕ: Это удалит все данные!)
-rm -f drevmaster.db
+rm -f DREVMASTER.db
 
 # Запустить приложение заново (база создастся с нуля)
-pm2 start drevmaster
+pm2 start DREVMASTER
 
 # Проверить логи
-pm2 logs drevmaster --lines 20
+pm2 logs DREVMASTER --lines 20
 ```
 
 **АЛЬТЕРНАТИВНО** (если не хотите потерять данные):
 
 ```bash
 # Подключиться к базе данных SQLite
-sqlite3 drevmaster.db
+sqlite3 DREVMASTER.db
 
 # Создать таблицу activity_logs вручную
 CREATE TABLE IF NOT EXISTS activity_logs (
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS activity_logs (
 .quit
 
 # Перезапустить приложение
-pm2 restart drevmaster
+pm2 restart DREVMASTER
 ```
 
 ### 3. Проверка настроек
