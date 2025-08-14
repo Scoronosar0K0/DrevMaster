@@ -44,15 +44,15 @@ export async function GET(request: NextRequest) {
       )
       .get(userId) as { totalDebt: number | null };
 
-    // Получаем количество товаров на складе (проданных менеджеру админом)
+    // Получаем количество товаров на складе (неоплаченные займы менеджера)
     const warehouseResult = db
       .prepare(
         `
         SELECT COUNT(*) as totalItems 
-        FROM sales s
-        JOIN orders o ON s.order_id = o.id
-        WHERE s.buyer_name = (SELECT name FROM users WHERE id = ?)
-        AND o.status = 'warehouse'
+        FROM loans l
+        JOIN partners p ON l.partner_id = p.id
+        WHERE p.user_id = ?
+        AND l.is_paid = false
       `
       )
       .get(userId) as { totalItems: number };

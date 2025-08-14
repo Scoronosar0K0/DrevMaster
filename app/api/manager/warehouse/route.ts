@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
     const managerName = userResult.name;
 
     // Получаем товары склада для этого менеджера
-    // Ищем продажи администратора этому менеджеру
+    // Ищем продажи администратора этому менеджеру по займам
     const warehouseItems = db
       .prepare(
         `
@@ -63,12 +63,17 @@ export async function GET(request: NextRequest) {
           s.description,
           s.date as sale_date,
           o.status,
+          l.amount as loan_amount,
+          l.is_paid as loan_paid,
           -- Вычисляем остаток товара (изначально проданное количество минус уже перепроданное)
           (s.sale_value - COALESCE(sold_sum.total_sold, 0)) as remaining_value
         FROM sales s
         JOIN orders o ON s.order_id = o.id
         JOIN suppliers sup ON o.supplier_id = sup.id
         JOIN supplier_items si ON o.item_id = si.id
+        -- Соединяем с займами через партнера менеджера
+        JOIN loans l ON l.order_id = o.id
+        JOIN partners p ON l.partner_id = p.id
         -- Подсчитываем уже проданное менеджером количество
         LEFT JOIN (
           SELECT 
@@ -78,12 +83,13 @@ export async function GET(request: NextRequest) {
           WHERE manager_id = ?
           GROUP BY related_sale_id
         ) sold_sum ON s.id = sold_sum.related_sale_id
-        WHERE s.buyer_name = ?
-        AND o.status = 'warehouse'
+        WHERE p.user_id = ?
+        AND s.buyer_name = ?
+        AND l.is_paid = false
         ORDER BY s.date DESC
       `
       )
-      .all(userId, managerName);
+      .all(userId, userId, managerName);
 
     return NextResponse.json(warehouseItems);
   } catch (error) {
