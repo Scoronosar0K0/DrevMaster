@@ -22,7 +22,9 @@ export async function GET(request: NextRequest) {
 
     // Получаем общую сумму доходов (отрицательные значения в expenses)
     const incomeResult = db
-      .prepare("SELECT SUM(ABS(amount)) as total FROM expenses WHERE amount < 0")
+      .prepare(
+        "SELECT SUM(ABS(amount)) as total FROM expenses WHERE amount < 0"
+      )
       .get() as { total: number | null };
     const totalIncome = incomeResult.total || 0;
 

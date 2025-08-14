@@ -90,16 +90,10 @@ export async function POST(
         );
       }
 
-      // Создаем расход для уменьшения баланса
-      const insertExpense = db.prepare(`
-        INSERT INTO expenses (amount, description, type, related_id, created_at)
-        VALUES (?, ?, 'loan_payment', ?, datetime('now'))
-      `);
-      insertExpense.run(
-        paymentAmount,
-        `Оплата займа ${loan.partner_name || `ID: ${loan.partner_id}`} - $${paymentAmount}`,
-        loanId
-      );
+      // НЕ создаем expense при оплате займа, потому что:
+      // 1. Займ исключается из активных займов (is_paid = true)
+      // 2. Это уже уменьшает баланс в формуле: activeLoans + income - expenses
+      // 3. Создание expense приведет к двойному списанию
     });
 
     transaction();
