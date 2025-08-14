@@ -358,7 +358,7 @@ export default function CashPage() {
         {/* Займы */}
         <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6">
           <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-4 sm:mb-6">
-            Активные займы
+            Займы партнеров (должны вам)
           </h2>
 
           {loans.length === 0 ? (
@@ -585,6 +585,7 @@ export default function CashPage() {
                         Выберите заказ
                       </label>
                       <select
+                        title="Выберите заказ для связи с расходом"
                         value={expenseForm.order_id}
                         onChange={(e) =>
                           setExpenseForm({

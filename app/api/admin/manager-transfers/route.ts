@@ -120,6 +120,68 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    // Если перевод одобрен, уменьшаем долг менеджера
+    if (status === 'approved') {
+      // Получаем данные перевода с именем менеджера
+      const transfer = db
+        .prepare(`
+          SELECT t.*, u.name as manager_name 
+          FROM manager_transfers t
+          JOIN users u ON t.from_manager_id = u.id
+          WHERE t.id = ?
+        `)
+        .get(id) as any;
+
+      if (transfer) {
+        // Находим партнера менеджера
+        const managerPartner = db
+          .prepare("SELECT id FROM partners WHERE user_id = ?")
+          .get(transfer.from_manager_id) as any;
+
+        if (managerPartner) {
+          // Ищем активные займы менеджера для уменьшения
+          const managerLoans = db
+            .prepare(
+              `SELECT * FROM loans 
+               WHERE partner_id = ? AND is_paid = false 
+               ORDER BY created_at ASC`
+            )
+            .all(managerPartner.id) as any[];
+
+          let remainingAmount = transfer.amount;
+
+          // Уменьшаем займы менеджера на сумму перевода
+          for (const loan of managerLoans) {
+            if (remainingAmount <= 0) break;
+
+            if (loan.amount <= remainingAmount) {
+              // Полностью погашаем этот займ
+              db.prepare("UPDATE loans SET is_paid = true WHERE id = ?").run(loan.id);
+              remainingAmount -= loan.amount;
+            } else {
+              // Частично уменьшаем займ
+              db.prepare("UPDATE loans SET amount = amount - ? WHERE id = ?").run(
+                remainingAmount,
+                loan.id
+              );
+              remainingAmount = 0;
+            }
+          }
+
+          // Добавляем доход админу от принятого перевода
+          const insertIncome = db.prepare(`
+            INSERT INTO expenses (amount, description, type, related_id, created_at)
+            VALUES (?, ?, 'other', ?, datetime('now'))
+          `);
+          insertIncome.run(
+            -transfer.amount, // Отрицательная сумма = доход
+            `Получен перевод от менеджера ${transfer.manager_name} - $${transfer.amount}`,
+            transfer.id
+          );
+        }
+      }
+    }
+
     // Логируем активность
     const transfer = db
       .prepare(

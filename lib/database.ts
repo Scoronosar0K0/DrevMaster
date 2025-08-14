@@ -275,15 +275,19 @@ export function initDatabase() {
   `);
 
   // Миграция: добавляем колонки name и contact_info в таблицу partners
-  const partnersTableInfo = db.pragma('table_info(partners)');
-  const hasNameColumn = partnersTableInfo.some((col: any) => col.name === 'name');
-  const hasContactInfoColumn = partnersTableInfo.some((col: any) => col.name === 'contact_info');
-  
+  const partnersTableInfo = db.pragma("table_info(partners)");
+  const hasNameColumn = partnersTableInfo.some(
+    (col: any) => col.name === "name"
+  );
+  const hasContactInfoColumn = partnersTableInfo.some(
+    (col: any) => col.name === "contact_info"
+  );
+
   if (!hasNameColumn) {
     console.log("Добавляем колонку 'name' в таблицу partners...");
     db.exec(`ALTER TABLE partners ADD COLUMN name TEXT`);
   }
-  
+
   if (!hasContactInfoColumn) {
     console.log("Добавляем колонку 'contact_info' в таблицу partners...");
     db.exec(`ALTER TABLE partners ADD COLUMN contact_info TEXT`);

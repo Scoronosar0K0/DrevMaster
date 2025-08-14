@@ -16,8 +16,18 @@ export async function GET() {
         u.email,
         u.phone,
         u.is_active,
-        u.created_at
+        u.created_at,
+        COALESCE(debt.total_debt, 0) as debt
       FROM users u
+      LEFT JOIN (
+        SELECT 
+          p.user_id,
+          SUM(l.amount) as total_debt
+        FROM partners p
+        JOIN loans l ON p.id = l.partner_id
+        WHERE l.is_paid = false
+        GROUP BY p.user_id
+      ) debt ON u.id = debt.user_id
       WHERE u.role = 'manager'
       ORDER BY u.created_at DESC
     `
