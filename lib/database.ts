@@ -274,6 +274,32 @@ export function initDatabase() {
     )
   `);
 
+  // Миграция: добавляем колонки name и contact_info в таблицу partners
+  const partnersTableInfo = db.pragma('table_info(partners)');
+  const hasNameColumn = partnersTableInfo.some((col: any) => col.name === 'name');
+  const hasContactInfoColumn = partnersTableInfo.some((col: any) => col.name === 'contact_info');
+  
+  if (!hasNameColumn) {
+    console.log("Добавляем колонку 'name' в таблицу partners...");
+    db.exec(`ALTER TABLE partners ADD COLUMN name TEXT`);
+  }
+  
+  if (!hasContactInfoColumn) {
+    console.log("Добавляем колонку 'contact_info' в таблицу partners...");
+    db.exec(`ALTER TABLE partners ADD COLUMN contact_info TEXT`);
+  }
+
+  // Обновляем существующих партнеров, заполняя name и contact_info из users
+  if (!hasNameColumn || !hasContactInfoColumn) {
+    console.log("Обновляем данные существующих партнеров...");
+    db.exec(`
+      UPDATE partners 
+      SET name = (SELECT name FROM users WHERE users.id = partners.user_id),
+          contact_info = (SELECT COALESCE(email, phone, 'Нет контактной информации') FROM users WHERE users.id = partners.user_id)
+      WHERE name IS NULL OR contact_info IS NULL
+    `);
+  }
+
   // Таблица поставщиков
   db.exec(`
     CREATE TABLE IF NOT EXISTS suppliers (
