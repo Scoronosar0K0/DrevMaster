@@ -17,6 +17,16 @@ interface AnalyticsData {
     totalValue: number;
   }>;
   topItems: Array<{ name: string; totalOrders: number; totalValue: number }>;
+  topBuyers: Array<{
+    buyer_name: string;
+    orderCount: number;
+    totalSpent: number;
+  }>;
+  topManagerBuyers: Array<{
+    buyer_name: string;
+    orderCount: number;
+    totalSpent: number;
+  }>;
   recentActivity: Array<{
     action: string;
     details: string;
