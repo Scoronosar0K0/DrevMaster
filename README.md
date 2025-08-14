@@ -15,7 +15,7 @@ cd drevmaster
 npm install
 
 # Создание файла окружения
-echo "JWT_SECRET=R2EYR5d7gdXup846" > .env.local
+echo "JWT_SECRET=drevmaster-secret-key-2024" > .env.local
 
 # Запуск в режиме разработки
 npm run dev
@@ -40,7 +40,7 @@ npm install
 
 # Создание файла окружения
 cat > .env.local << EOF
-JWT_SECRET=R2EYR5d7gdXup846
+JWT_SECRET=drevmaster-secret-key-2024
 NODE_ENV=production
 PORT=3000
 EOF
@@ -60,7 +60,7 @@ npm start
 
 ```env
 # JWT секрет (обязательно)
-JWT_SECRET=R2EYR5d7gdXup846
+JWT_SECRET=drevmaster-secret-key-2024
 
 # Режим работы
 NODE_ENV=production

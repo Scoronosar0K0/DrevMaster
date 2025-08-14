@@ -30,6 +30,48 @@ npm run build
 pm2 restart drevmaster
 ```
 
+### 2.1 ИСПРАВЛЕНИЕ ТАБЛИЦЫ ACTIVITY_LOGS
+
+Если в логах видите "Таблица activity_logs еще не создана", выполните:
+
+```bash
+# Остановить приложение
+pm2 stop drevmaster
+
+# Удалить старую базу данных (ВНИМАНИЕ: Это удалит все данные!)
+rm -f drevmaster.db
+
+# Запустить приложение заново (база создастся с нуля)
+pm2 start drevmaster
+
+# Проверить логи
+pm2 logs drevmaster --lines 20
+```
+
+**АЛЬТЕРНАТИВНО** (если не хотите потерять данные):
+
+```bash
+# Подключиться к базе данных SQLite
+sqlite3 drevmaster.db
+
+# Создать таблицу activity_logs вручную
+CREATE TABLE IF NOT EXISTS activity_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER,
+  action TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  details TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (user_id) REFERENCES users (id)
+);
+
+# Выйти из SQLite
+.quit
+
+# Перезапустить приложение
+pm2 restart drevmaster
+```
+
 ### 3. Проверка настроек
 
 ```bash
@@ -37,7 +79,7 @@ pm2 restart drevmaster
 cat .env.local
 
 # Должно содержать:
-# JWT_SECRET=R2EYR5d7gdXup846
+# JWT_SECRET=DREVMASTER-secret-key-2024
 # NODE_ENV=production
 # PORT=3000
 
@@ -45,7 +87,7 @@ cat .env.local
 pm2 status
 
 # Проверяем логи
-pm2 logs drevmaster --lines 20
+pm2 logs DREVMASTER --lines 20
 ```
 
 ### 4. Проверка Nginx
@@ -85,7 +127,7 @@ netstat -tlnp | grep :3000
 ls -la *.db
 
 # Если базы нет, перезапустите приложение
-pm2 restart drevmaster
+pm2 restart DREVMASTER
 ```
 
 ### 8. Альтернативное решение
@@ -94,16 +136,16 @@ pm2 restart drevmaster
 
 ```bash
 # Остановить приложение
-pm2 stop drevmaster
+pm2 stop DREVMASTER
 
 # Удалить старую базу данных
 rm -f *.db
 
 # Запустить приложение заново
-pm2 start drevmaster
+pm2 start DREVMASTER
 
 # Проверить логи
-pm2 logs drevmaster
+pm2 logs DREVMASTER
 ```
 
 ## 🔍 Диагностика
@@ -124,7 +166,7 @@ pm2 logs drevmaster
 
 ## 📞 Если ничего не помогает
 
-1. Проверьте логи приложения: `pm2 logs drevmaster`
+1. Проверьте логи приложения: `pm2 logs DREVMASTER`
 2. Проверьте логи Nginx: `tail -f /var/log/nginx/error.log`
 3. Убедитесь что JWT_SECRET одинаковый в `.env.local` и в коде
 4. Попробуйте перезапустить весь сервер: `reboot`

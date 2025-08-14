@@ -98,7 +98,7 @@ npm install
 
 # Создание файла окружения
 cat > .env.local << EOF
-JWT_SECRET=R2EYR5d7gdXup846
+JWT_SECRET=drevmaster-secret-key-2024
 NODE_ENV=production
 PORT=3000
 EOF

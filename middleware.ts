@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 
 const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "R2EYR5d7gdXup846"
+  process.env.JWT_SECRET || "drevmaster-secret-key-2024"
 );
 
 export function middleware(request: NextRequest) {

@@ -398,7 +398,7 @@ export function initDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       amount REAL NOT NULL,
       description TEXT,
-      type TEXT NOT NULL CHECK (type IN ('order', 'transportation', 'customs', 'other')),
+      type TEXT NOT NULL CHECK (type IN ('order', 'transportation', 'customs', 'loan_payment', 'other')),
       related_id INTEGER,
       created_at TEXT DEFAULT (datetime('now'))
     )

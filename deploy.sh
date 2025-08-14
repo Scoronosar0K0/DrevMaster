@@ -68,7 +68,7 @@ ssh root@194.87.201.205 << 'EOF'
     
     # Создаем файл окружения
     cat > .env.local << 'ENVEOF'
-JWT_SECRET=R2EYR5d7gdXup846
+JWT_SECRET=drevmaster-secret-key-2024
 NODE_ENV=production
 PORT=3000
 ENVEOF

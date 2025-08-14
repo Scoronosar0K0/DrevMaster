@@ -5,7 +5,7 @@ import { jwtVerify } from "jose";
 initDatabase();
 
 const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "R2EYR5d7gdXup846"
+  process.env.JWT_SECRET || "drevmaster-secret-key-2024"
 );
 
 export async function POST(request: NextRequest) {

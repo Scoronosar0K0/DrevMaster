@@ -1,8 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    appDir: true,
-  },
+  // App Directory уже по умолчанию включен в Next.js 13+
 };
 
 module.exports = nextConfig;
