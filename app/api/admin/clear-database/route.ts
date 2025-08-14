@@ -7,25 +7,52 @@ export async function POST() {
     db.pragma("foreign_keys = OFF");
 
     const transaction = db.transaction(() => {
-      // Удаляем все данные в правильном порядке
-      db.prepare("DELETE FROM activity_logs").run();
-      db.prepare("DELETE FROM sales").run();
-      db.prepare("DELETE FROM loans").run();
-      db.prepare("DELETE FROM orders").run();
-      db.prepare("DELETE FROM supplier_items").run();
-      db.prepare("DELETE FROM suppliers").run();
-      db.prepare("DELETE FROM partners").run();
+      // Список всех таблиц для очистки (в порядке зависимостей)
+      const tables = [
+        'activity_logs',
+        'manager_sales', 
+        'manager_transfers',
+        'supplier_debts',
+        'expenses',
+        'sales',
+        'loans',
+        'orders',
+        'supplier_items',
+        'suppliers',
+        'partners'
+      ];
+
+      // Удаляем все данные из таблиц (безопасно, игнорируем отсутствующие таблицы)
+      tables.forEach(table => {
+        try {
+          db.prepare(`DELETE FROM ${table}`).run();
+          console.log(`Очищена таблица: ${table}`);
+        } catch (e) {
+          console.log(`Таблица ${table} не найдена или уже пуста`);
+        }
+      });
 
       // Удаляем всех пользователей кроме админа
-      db.prepare("DELETE FROM users WHERE username != 'admin'").run();
+      try {
+        db.prepare("DELETE FROM users WHERE username != 'admin'").run();
+        console.log("Удалены все пользователи кроме админа");
+      } catch (e) {
+        console.log("Ошибка при удалении пользователей:", e);
+      }
 
-      // Очищаем счетчики автоинкремента
-      db.prepare(
-        "UPDATE sqlite_sequence SET seq = 0 WHERE name IN ('activity_logs', 'sales', 'loans', 'orders', 'supplier_items', 'suppliers', 'partners')"
-      ).run();
-      db.prepare(
-        "UPDATE sqlite_sequence SET seq = 1 WHERE name = 'users'"
-      ).run();
+      // Очищаем счетчики автоинкремента для всех таблиц
+      try {
+        const tableNames = tables.map(t => `'${t}'`).join(', ');
+        db.prepare(
+          `UPDATE sqlite_sequence SET seq = 0 WHERE name IN (${tableNames})`
+        ).run();
+        db.prepare(
+          "UPDATE sqlite_sequence SET seq = 1 WHERE name = 'users'"
+        ).run();
+        console.log("Очищены счетчики автоинкремента");
+      } catch (e) {
+        console.log("Ошибка при очистке счетчиков:", e);
+      }
 
       // Логируем очистку
       db.prepare(
