@@ -51,6 +51,8 @@ export async function POST(
 
     // Начинаем транзакцию
     const transaction = db.transaction(() => {
+      const paymentAmount = isPartialPayment ? amount : loan.amount;
+      
       if (isPartialPayment && amount < loan.amount) {
         // Частичное погашение - уменьшаем сумму займа
         const newAmount = loan.amount - amount;
@@ -87,6 +89,17 @@ export async function POST(
           } на сумму $${loan.amount} (ID займа: ${loanId})`
         );
       }
+
+      // Создаем расход для уменьшения баланса
+      const insertExpense = db.prepare(`
+        INSERT INTO expenses (amount, description, type, related_id, created_at)
+        VALUES (?, ?, 'loan_payment', ?, datetime('now'))
+      `);
+      insertExpense.run(
+        paymentAmount,
+        `Оплата займа ${loan.partner_name || `ID: ${loan.partner_id}`} - $${paymentAmount}`,
+        loanId
+      );
     });
 
     transaction();
