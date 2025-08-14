@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     // Декодируем токен
     const { jwtVerify } = await import("jose");
     const JWT_SECRET = new TextEncoder().encode(
-      process.env.JWT_SECRET || "drevmaster-secret-key-2024"
+      process.env.JWT_SECRET || "R2EYR5d7gdXup846"
     );
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const managerId = payload.userId as number;
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
     // Декодируем токен
     const { jwtVerify } = await import("jose");
     const JWT_SECRET = new TextEncoder().encode(
-      process.env.JWT_SECRET || "drevmaster-secret-key-2024"
+      process.env.JWT_SECRET || "R2EYR5d7gdXup846"
     );
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const managerId = payload.userId as number;
