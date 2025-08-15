@@ -361,6 +361,8 @@ export function initDatabase() {
       order_id INTEGER,
       amount REAL NOT NULL,
       is_paid BOOLEAN DEFAULT false,
+      loan_date TEXT,
+      description TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (partner_id) REFERENCES partners (id),
       FOREIGN KEY (order_id) REFERENCES orders (id)
@@ -372,6 +374,9 @@ export function initDatabase() {
     // Пытаемся получить схему таблицы loans
     const tableInfo = db.prepare("PRAGMA table_info(loans)").all() as any[];
     const orderIdColumn = tableInfo.find((col) => col.name === "order_id");
+
+    const loanDateColumn = tableInfo.find((col) => col.name === "loan_date");
+    const descriptionColumn = tableInfo.find((col) => col.name === "description");
 
     if (orderIdColumn && orderIdColumn.notnull === 1) {
       // Если order_id NOT NULL, пересоздаем таблицу
@@ -385,6 +390,8 @@ export function initDatabase() {
           order_id INTEGER,
           amount REAL NOT NULL,
           is_paid BOOLEAN DEFAULT false,
+          loan_date TEXT,
+          description TEXT,
           created_at TEXT DEFAULT (datetime('now')),
           FOREIGN KEY (partner_id) REFERENCES partners (id),
           FOREIGN KEY (order_id) REFERENCES orders (id)
@@ -402,6 +409,17 @@ export function initDatabase() {
       `);
 
       console.log("Схема таблицы loans обновлена!");
+    } else {
+      // Добавляем новые колонки если их нет
+      if (!loanDateColumn) {
+        console.log("Добавляем колонку 'loan_date' в таблицу loans...");
+        db.exec(`ALTER TABLE loans ADD COLUMN loan_date TEXT`);
+      }
+      
+      if (!descriptionColumn) {
+        console.log("Добавляем колонку 'description' в таблицу loans...");
+        db.exec(`ALTER TABLE loans ADD COLUMN description TEXT`);
+      }
     }
   } catch (error) {
     console.log("Ошибка при проверке схемы loans:", error);

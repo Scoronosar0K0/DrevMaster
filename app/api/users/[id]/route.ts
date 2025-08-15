@@ -24,10 +24,7 @@ export async function PUT(
 
     // Если изменяется только профиль (без роли), имя все равно требуется
     if (!name) {
-      return NextResponse.json(
-        { error: "Имя обязательно" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Имя обязательно" }, { status: 400 });
     }
 
     // Если изменяется пароль, проверяем текущий пароль (для безопасности)
@@ -37,18 +34,23 @@ export async function PUT(
         const getCurrentPassword = db.prepare(
           "SELECT password FROM users WHERE id = ?"
         );
-        const userResult = getCurrentPassword.get(userId) as { password: string } | undefined;
-        
-        if (!userResult || !bcrypt.compareSync(currentPassword, userResult.password)) {
+        const userResult = getCurrentPassword.get(userId) as
+          | { password: string }
+          | undefined;
+
+        if (
+          !userResult ||
+          !bcrypt.compareSync(currentPassword, userResult.password)
+        ) {
           return NextResponse.json(
             { error: "Неверный текущий пароль" },
             { status: 400 }
           );
         }
       }
-      
+
       const hashedPassword = bcrypt.hashSync(password, 10);
-      
+
       if (role) {
         // Обновляем пароль и роль
         const updateWithPassword = db.prepare(`
@@ -101,12 +103,7 @@ export async function PUT(
           SET name = ?, email = ?, phone = ?
           WHERE id = ?
         `);
-        updateProfileOnly.run(
-          name,
-          email || null,
-          phone || null,
-          userId
-        );
+        updateProfileOnly.run(name, email || null, phone || null, userId);
       }
     }
 
@@ -115,12 +112,71 @@ export async function PUT(
       "SELECT id, username, role, name, email, phone, is_active, created_at FROM users WHERE id = ?"
     );
     const updatedUser = getUpdatedUser.get(userId);
-    
+
     return NextResponse.json(updatedUser);
   } catch (error) {
     console.error("Ошибка обновления пользователя:", error);
     return NextResponse.json(
       { error: "Ошибка обновления пользователя" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const userId = parseInt(params.id);
+
+    // Проверяем что пользователь существует
+    const user = db
+      .prepare("SELECT username, name FROM users WHERE id = ?")
+      .get(userId) as any;
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Пользователь не найден" },
+        { status: 404 }
+      );
+    }
+
+    // Нельзя удалить админа
+    if (user.username === "admin") {
+      return NextResponse.json(
+        { error: "Нельзя удалить администратора" },
+        { status: 400 }
+      );
+    }
+
+    // Удаляем пользователя
+    const deleteUser = db.prepare("DELETE FROM users WHERE id = ?");
+    const result = deleteUser.run(userId);
+
+    if (result.changes === 0) {
+      return NextResponse.json(
+        { error: "Пользователь не найден" },
+        { status: 404 }
+      );
+    }
+
+    // Логируем активность
+    try {
+      const insertLog = db.prepare(`
+        INSERT INTO activity_logs (user_id, action, entity_type, details)
+        VALUES (1, 'удален', 'user', ?)
+      `);
+      insertLog.run(`Удален пользователь: ${user.name} (${user.username})`);
+    } catch (logError) {
+      console.error("Ошибка логирования:", logError);
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Ошибка удаления пользователя:", error);
+    return NextResponse.json(
+      { error: "Ошибка удаления пользователя" },
       { status: 500 }
     );
   }
