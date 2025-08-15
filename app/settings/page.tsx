@@ -22,6 +22,7 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<"profile" | "users" | "system">(
     "profile"
   );
+  const [clearDBPassword, setClearDBPassword] = useState("");
 
   const [formData, setFormData] = useState({
     username: "",
@@ -527,23 +528,23 @@ export default function SettingsPage() {
                   </p>
                 </div>
               ) : (
-                <div className="overflow-hidden">
+                <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Пользователь
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Роль
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="hidden sm:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Контакты
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Статус
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Действия
                         </th>
                       </tr>
@@ -551,57 +552,70 @@ export default function SettingsPage() {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {filteredUsers.map((user) => (
                         <tr key={user.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center">
-                              <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold mr-3">
+                              <div className="w-8 sm:w-10 h-8 sm:h-10 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold mr-2 sm:mr-3 text-xs sm:text-base">
                                 {user.name[0]?.toUpperCase() ||
                                   user.username[0]?.toUpperCase()}
                               </div>
-                              <div>
-                                <div className="text-sm font-medium text-gray-900">
+                              <div className="min-w-0 flex-1">
+                                <div className="text-xs sm:text-sm font-medium text-gray-900 truncate">
                                   {user.name}
                                 </div>
-                                <div className="text-sm text-gray-500">
+                                <div className="text-xs text-gray-500 truncate">
                                   @{user.username}
+                                </div>
+                                {/* Показываем контакты на мобильных */}
+                                <div className="sm:hidden text-xs text-gray-500 mt-1">
+                                  {user.email && <div>📧 {user.email}</div>}
+                                  {user.phone && <div>📱 {user.phone}</div>}
                                 </div>
                               </div>
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
                             <span
-                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getRoleColor(
+                              className={`inline-flex items-center px-1.5 sm:px-2.5 py-0.5 rounded-full text-xs font-medium ${getRoleColor(
                                 user.role
                               )}`}
                             >
-                              {getRoleText(user.role)}
+                              <span className="hidden sm:inline">{getRoleText(user.role)}</span>
+                              <span className="sm:hidden">
+                                {user.role === "admin" ? "А" : user.role === "partner" ? "П" : "У"}
+                              </span>
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <td className="hidden sm:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                             <div>
                               {user.email && <div>📧 {user.email}</div>}
                               {user.phone && <div>📱 {user.phone}</div>}
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
                             <span
-                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              className={`inline-flex items-center px-1.5 sm:px-2.5 py-0.5 rounded-full text-xs font-medium ${
                                 user.is_active
                                   ? "bg-green-100 text-green-800"
                                   : "bg-red-100 text-red-800"
                               }`}
                             >
-                              {user.is_active ? "Активен" : "Неактивен"}
+                              <span className="hidden sm:inline">
+                                {user.is_active ? "Активен" : "Неактивен"}
+                              </span>
+                              <span className="sm:hidden">
+                                {user.is_active ? "✓" : "✗"}
+                              </span>
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            <div className="flex space-x-2">
+                          <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <div className="flex space-x-1 sm:space-x-2">
                               <button
                                 onClick={() => handleEdit(user)}
-                                className="text-blue-600 hover:text-blue-800"
+                                className="text-blue-600 hover:text-blue-800 p-1 rounded"
                                 title="Редактировать"
                               >
                                 <svg
-                                  className="w-5 h-5"
+                                  className="w-4 h-4 sm:w-5 sm:h-5"
                                   fill="none"
                                   stroke="currentColor"
                                   viewBox="0 0 24 24"
@@ -618,11 +632,11 @@ export default function SettingsPage() {
                                 onClick={() =>
                                   toggleUserStatus(user.id, user.is_active)
                                 }
-                                className={
+                                className={`p-1 rounded ${
                                   user.is_active
                                     ? "text-yellow-600 hover:text-yellow-800"
                                     : "text-green-600 hover:text-green-800"
-                                }
+                                }`}
                                 title={
                                   user.is_active
                                     ? "Деактивировать"
@@ -630,7 +644,7 @@ export default function SettingsPage() {
                                 }
                               >
                                 <svg
-                                  className="w-5 h-5"
+                                  className="w-4 h-4 sm:w-5 sm:h-5"
                                   fill="none"
                                   stroke="currentColor"
                                   viewBox="0 0 24 24"
@@ -655,11 +669,11 @@ export default function SettingsPage() {
                               {user.username !== "admin" && (
                                 <button
                                   onClick={() => handleDelete(user.id)}
-                                  className="text-red-600 hover:text-red-800"
+                                  className="text-red-600 hover:text-red-800 p-1 rounded"
                                   title="Удалить"
                                 >
                                   <svg
-                                    className="w-5 h-5"
+                                    className="w-4 h-4 sm:w-5 sm:h-5"
                                     fill="none"
                                     stroke="currentColor"
                                     viewBox="0 0 24 24"
@@ -722,35 +736,60 @@ export default function SettingsPage() {
                   <p className="text-sm text-red-700 mb-4">
                     Данные действия необратимы. Будьте осторожны!
                   </p>
-                  <button
-                    onClick={async () => {
-                      if (
-                        confirm(
-                          "Вы уверены, что хотите очистить всю базу данных? Это действие необратимо!"
-                        )
-                      ) {
-                        try {
-                          const response = await fetch(
-                            "/api/admin/clear-database",
-                            {
-                              method: "POST",
+                  <div className="space-y-3">
+                    <input
+                      type="password"
+                      value={clearDBPassword}
+                      onChange={(e) => setClearDBPassword(e.target.value)}
+                      placeholder="Введите пароль: Manuchehr1981"
+                      className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    />
+                    <button
+                      onClick={async () => {
+                        if (clearDBPassword !== "Manuchehr1981") {
+                          alert("Неверный пароль!");
+                          return;
+                        }
+                        
+                        if (
+                          confirm(
+                            "Вы уверены, что хотите очистить всю базу данных? Это действие необратимо!"
+                          )
+                        ) {
+                          try {
+                            const response = await fetch(
+                              "/api/admin/clear-database",
+                              {
+                                method: "POST",
+                                headers: {
+                                  "Content-Type": "application/json",
+                                },
+                                body: JSON.stringify({ password: clearDBPassword }),
+                              }
+                            );
+                            if (response.ok) {
+                              alert("База данных очищена");
+                              setClearDBPassword("");
+                              window.location.reload();
+                            } else {
+                              const error = await response.json();
+                              alert(error.error || "Ошибка при очистке базы данных");
                             }
-                          );
-                          if (response.ok) {
-                            alert("База данных очищена");
-                            window.location.reload();
-                          } else {
+                          } catch (error) {
                             alert("Ошибка при очистке базы данных");
                           }
-                        } catch (error) {
-                          alert("Ошибка при очистке базы данных");
                         }
-                      }
-                    }}
-                    className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                  >
-                    🗑️ Очистить базу данных
-                  </button>
+                      }}
+                      disabled={clearDBPassword !== "Manuchehr1981"}
+                      className={`w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        clearDBPassword === "Manuchehr1981"
+                          ? "bg-red-600 hover:bg-red-700 text-white"
+                          : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                      }`}
+                    >
+                      🗑️ Очистить базу данных
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

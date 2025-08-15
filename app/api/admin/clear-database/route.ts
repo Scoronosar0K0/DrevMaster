@@ -1,8 +1,18 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/database";
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
+    const body = await request.json();
+    const { password } = body;
+
+    // Проверяем пароль
+    if (password !== "Manuchehr1981") {
+      return NextResponse.json(
+        { error: "Неверный пароль" },
+        { status: 401 }
+      );
+    }
     // Отключаем проверку внешних ключей для очистки
     db.pragma("foreign_keys = OFF");
 
