@@ -5,6 +5,15 @@ initDatabase();
 
 export async function GET() {
   try {
+    // Проверяем, что таблица orders существует и не в процессе миграции
+    const ordersTableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='orders'").get() as any;
+    const ordersOldTableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='orders_old'").get() as any;
+    
+    if (!ordersTableCheck || ordersOldTableCheck) {
+      console.log("Таблица orders недоступна или в процессе миграции");
+      return NextResponse.json([]);
+    }
+    
     const loans = db
       .prepare(
         `
@@ -43,6 +52,18 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    // Проверяем, что таблица orders существует и не в процессе миграции
+    const ordersTableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='orders'").get() as any;
+    const ordersOldTableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='orders_old'").get() as any;
+    
+    if (!ordersTableCheck || ordersOldTableCheck) {
+      console.log("Таблица orders недоступна или в процессе миграции");
+      return NextResponse.json(
+        { error: "Система временно недоступна, попробуйте позже" },
+        { status: 503 }
+      );
+    }
+    
     const body = await request.json();
     const { partner_id, amount, description, loan_date, from_admin } = body;
 

@@ -527,6 +527,14 @@ export function initDatabase() {
       return;
     }
     
+    // Дополнительная проверка - если таблица orders_old существует, удаляем её
+    try {
+      db.exec("DROP TABLE IF EXISTS orders_old");
+      console.log("Удалена существующая таблица orders_old");
+    } catch (e) {
+      // Игнорируем ошибки при удалении
+    }
+    
     // Проверяем существующий CHECK constraint
     const sql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='orders'").get() as any;
     
