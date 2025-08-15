@@ -294,18 +294,7 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Информация */}
-          <div className="mt-8 text-center">
-            <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">
-              <p className="font-medium text-blue-800 mb-1">Тестовый доступ:</p>
-              <p>
-                Логин: <span className="font-mono font-bold">admin</span>
-              </p>
-              <p>
-                Пароль: <span className="font-mono font-bold">admin</span>
-              </p>
-            </div>
-          </div>
+
         </div>
       </div>
 

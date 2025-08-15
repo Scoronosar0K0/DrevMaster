@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/database";
+const bcrypt = require("bcryptjs");
 
 export async function POST(request: Request) {
   try {
@@ -42,10 +43,10 @@ export async function POST(request: Request) {
         }
       });
 
-      // Удаляем всех пользователей кроме админа
+      // Удаляем ВСЕХ пользователей включая админа
       try {
-        db.prepare("DELETE FROM users WHERE username != 'admin'").run();
-        console.log("Удалены все пользователи кроме админа");
+        db.prepare("DELETE FROM users").run();
+        console.log("Удалены все пользователи включая админа");
       } catch (e) {
         console.log("Ошибка при удалении пользователей:", e);
       }
@@ -57,18 +58,30 @@ export async function POST(request: Request) {
           `UPDATE sqlite_sequence SET seq = 0 WHERE name IN (${tableNames})`
         ).run();
         db.prepare(
-          "UPDATE sqlite_sequence SET seq = 1 WHERE name = 'users'"
+          "UPDATE sqlite_sequence SET seq = 0 WHERE name = 'users'"
         ).run();
         console.log("Очищены счетчики автоинкремента");
       } catch (e) {
         console.log("Ошибка при очистке счетчиков:", e);
       }
 
+      // Создаем нового админа с паролем "admin"
+      try {
+        const hashedPassword = bcrypt.hashSync("admin", 10);
+        db.prepare(`
+          INSERT INTO users (username, password, role, name, email, is_active)
+          VALUES ('admin', ?, 'admin', 'Администратор', 'admin@drevmaster.com', true)
+        `).run(hashedPassword);
+        console.log("Создан новый администратор с логином: admin, паролем: admin");
+      } catch (e) {
+        console.log("Ошибка при создании администратора:", e);
+      }
+
       // Логируем очистку
       db.prepare(
         `
         INSERT INTO activity_logs (user_id, action, entity_type, details)
-        VALUES (1, 'очистка_бд', 'system', 'База данных была полностью очищена')
+        VALUES (1, 'очистка_бд', 'system', 'База данных была полностью очищена и создан новый администратор')
       `
       ).run();
     });
@@ -84,7 +97,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: "База данных успешно очищена. Остался только администратор.",
+      message: "База данных полностью очищена. Создан новый администратор. Логин: admin, Пароль: admin",
     });
   } catch (error) {
     // Включаем обратно проверку внешних ключей в случае ошибки
