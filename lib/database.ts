@@ -519,10 +519,18 @@ export function initDatabase() {
 
   // Миграция для добавления статуса 'in_container' в таблицу orders
   try {
+    // Проверяем, что миграция еще не была выполнена
+    const migrationCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='orders_old'").get() as any;
+    
+    if (migrationCheck) {
+      console.log("Миграция orders уже выполняется или была прервана, пропускаем...");
+      return;
+    }
+    
     // Проверяем существующий CHECK constraint
     const sql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='orders'").get() as any;
     
-    if (sql && sql.sql && !sql.sql.includes("'in_container'") && !sql.sql.includes("orders_old")) {
+    if (sql && sql.sql && !sql.sql.includes("'in_container'")) {
       console.log("Миграция orders: добавляем статус 'in_container'...");
       
       // Получаем все данные
@@ -611,6 +619,8 @@ export function initDatabase() {
       db.pragma("foreign_keys = ON");
       
       console.log("Миграция orders завершена");
+    } else {
+      console.log("Миграция orders не требуется - статус 'in_container' уже присутствует");
     }
   } catch (error) {
     console.log("Ошибка при миграции orders:", error);
