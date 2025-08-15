@@ -579,9 +579,15 @@ export default function SettingsPage() {
                                 user.role
                               )}`}
                             >
-                              <span className="hidden sm:inline">{getRoleText(user.role)}</span>
+                              <span className="hidden sm:inline">
+                                {getRoleText(user.role)}
+                              </span>
                               <span className="sm:hidden">
-                                {user.role === "admin" ? "А" : user.role === "partner" ? "П" : "У"}
+                                {user.role === "admin"
+                                  ? "А"
+                                  : user.role === "partner"
+                                  ? "П"
+                                  : "У"}
                               </span>
                             </span>
                           </td>
@@ -741,7 +747,7 @@ export default function SettingsPage() {
                       type="password"
                       value={clearDBPassword}
                       onChange={(e) => setClearDBPassword(e.target.value)}
-                      placeholder="Введите пароль: Manuchehr1981"
+                      placeholder="Введите пароль"
                       className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent"
                     />
                     <button
@@ -750,7 +756,7 @@ export default function SettingsPage() {
                           alert("Неверный пароль!");
                           return;
                         }
-                        
+
                         if (
                           confirm(
                             "Вы уверены, что хотите очистить всю базу данных? Это действие необратимо!"
@@ -764,7 +770,9 @@ export default function SettingsPage() {
                                 headers: {
                                   "Content-Type": "application/json",
                                 },
-                                body: JSON.stringify({ password: clearDBPassword }),
+                                body: JSON.stringify({
+                                  password: clearDBPassword,
+                                }),
                               }
                             );
                             if (response.ok) {
@@ -773,7 +781,9 @@ export default function SettingsPage() {
                               window.location.reload();
                             } else {
                               const error = await response.json();
-                              alert(error.error || "Ошибка при очистке базы данных");
+                              alert(
+                                error.error || "Ошибка при очистке базы данных"
+                              );
                             }
                           } catch (error) {
                             alert("Ошибка при очистке базы данных");
