@@ -57,7 +57,7 @@ export interface Order {
   value: number;
   price_per_unit?: number;
   total_price?: number;
-  status: "paid" | "on_way" | "warehouse" | "sold" | "loan";
+  status: "paid" | "in_container" | "on_way" | "warehouse" | "sold" | "loan";
   containers?: number;
   container_loads?: string; // JSON массив
   transportation_cost?: number;
@@ -213,7 +213,7 @@ export function initDatabase() {
             value REAL NOT NULL,
             price_per_unit REAL,
             total_price REAL,
-            status TEXT DEFAULT 'paid' CHECK (status IN ('paid', 'on_way', 'warehouse', 'sold', 'loan')),
+            status TEXT DEFAULT 'paid' CHECK (status IN ('paid', 'in_container', 'on_way', 'warehouse', 'sold', 'loan')),
             containers INTEGER,
             container_loads TEXT,
             transportation_cost REAL,
@@ -342,7 +342,7 @@ export function initDatabase() {
       value REAL NOT NULL,
       price_per_unit REAL,
       total_price REAL,
-      status TEXT DEFAULT 'paid' CHECK (status IN ('paid', 'on_way', 'warehouse', 'sold', 'loan')),
+      status TEXT DEFAULT 'paid' CHECK (status IN ('paid', 'in_container', 'on_way', 'warehouse', 'sold', 'loan')),
       containers INTEGER,
       container_loads TEXT,
       transportation_cost REAL,
@@ -516,6 +516,94 @@ export function initDatabase() {
       FOREIGN KEY (related_sale_id) REFERENCES sales (id)
     )
   `);
+
+  // Миграция для добавления статуса 'in_container' в таблицу orders
+  try {
+    // Проверяем существующий CHECK constraint
+    const sql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='orders'").get() as any;
+    
+    if (sql && sql.sql && !sql.sql.includes("'in_container'")) {
+      console.log("Миграция orders: добавляем статус 'in_container'...");
+      
+      // Получаем все данные
+      const existingOrders = db.prepare("SELECT * FROM orders").all();
+      
+      // Отключаем foreign keys временно
+      db.pragma("foreign_keys = OFF");
+      
+      // Переименовываем старую таблицу
+      db.exec("ALTER TABLE orders RENAME TO orders_old");
+      
+      // Создаем новую таблицу с обновленным CHECK constraint
+      db.exec(`
+        CREATE TABLE orders (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          order_number TEXT UNIQUE NOT NULL,
+          supplier_id INTEGER NOT NULL,
+          item_id INTEGER NOT NULL,
+          date TEXT NOT NULL,
+          description TEXT,
+          measurement TEXT DEFAULT 'm3',
+          value REAL NOT NULL,
+          price_per_unit REAL,
+          total_price REAL,
+          status TEXT DEFAULT 'paid' CHECK (status IN ('paid', 'in_container', 'on_way', 'warehouse', 'sold', 'loan')),
+          containers INTEGER,
+          container_loads TEXT,
+          transportation_cost REAL,
+          customer_fee REAL,
+          created_at TEXT DEFAULT (datetime('now')),
+          FOREIGN KEY (supplier_id) REFERENCES suppliers (id),
+          FOREIGN KEY (item_id) REFERENCES supplier_items (id)
+        )
+      `);
+      
+      // Восстанавливаем данные
+      const insertOrder = db.prepare(`
+        INSERT INTO orders (
+          id, order_number, supplier_id, item_id, date, description,
+          measurement, value, price_per_unit, total_price, status,
+          containers, container_loads, transportation_cost, customer_fee, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      
+      for (const order of existingOrders) {
+        try {
+          insertOrder.run(
+            order.id,
+            order.order_number,
+            order.supplier_id,
+            order.item_id,
+            order.date,
+            order.description,
+            order.measurement,
+            order.value,
+            order.price_per_unit,
+            order.total_price,
+            order.status,
+            order.containers,
+            order.container_loads,
+            order.transportation_cost,
+            order.customer_fee,
+            order.created_at
+          );
+        } catch (e) {
+          console.log(`Ошибка восстановления заказа ${order.id}:`, e);
+        }
+      }
+      
+      // Удаляем старую таблицу
+      db.exec("DROP TABLE orders_old");
+      
+      // Включаем foreign keys обратно
+      db.pragma("foreign_keys = ON");
+      
+      console.log("Миграция orders завершена");
+    }
+  } catch (error) {
+    console.log("Ошибка при миграции orders:", error);
+  }
 
   // Создаем администратора по умолчанию
   const adminExists = db
