@@ -522,7 +522,7 @@ export function initDatabase() {
     // Проверяем существующий CHECK constraint
     const sql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='orders'").get() as any;
     
-    if (sql && sql.sql && !sql.sql.includes("'in_container'")) {
+    if (sql && sql.sql && !sql.sql.includes("'in_container'") && !sql.sql.includes("orders_old")) {
       console.log("Миграция orders: добавляем статус 'in_container'...");
       
       // Получаем все данные
@@ -530,6 +530,13 @@ export function initDatabase() {
       
       // Отключаем foreign keys временно
       db.pragma("foreign_keys = OFF");
+      
+      // Проверяем, существует ли таблица orders_old и удаляем её если есть
+      try {
+        db.exec("DROP TABLE IF EXISTS orders_old");
+      } catch (e) {
+        // Игнорируем ошибки
+      }
       
       // Переименовываем старую таблицу
       db.exec("ALTER TABLE orders RENAME TO orders_old");
@@ -594,7 +601,11 @@ export function initDatabase() {
       }
       
       // Удаляем старую таблицу
-      db.exec("DROP TABLE orders_old");
+      try {
+        db.exec("DROP TABLE orders_old");
+      } catch (e) {
+        console.log("Таблица orders_old уже удалена или не существует");
+      }
       
       // Включаем foreign keys обратно
       db.pragma("foreign_keys = ON");
