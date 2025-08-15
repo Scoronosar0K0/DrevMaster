@@ -34,7 +34,7 @@ interface Order {
   value: number;
   price_per_unit?: number;
   total_price?: number;
-  status: "paid" | "on_way" | "warehouse" | "sold" | "loan";
+  status: "paid" | "in_container" | "on_way" | "warehouse" | "sold" | "loan";
   containers?: number;
   container_loads?: string;
   transportation_cost?: number;
@@ -63,8 +63,11 @@ export default function OrdersPage() {
   const [showLoanPaymentDialog, setShowLoanPaymentDialog] = useState(false);
   const [showOrderDetailsDialog, setShowOrderDetailsDialog] = useState(false);
   const [showOrderExpenseDialog, setShowOrderExpenseDialog] = useState(false);
-  const [showContainerCreationDialog, setShowContainerCreationDialog] = useState(false);
-  const [newlyCreatedOrder, setNewlyCreatedOrder] = useState<Order | null>(null);
+  const [showContainerCreationDialog, setShowContainerCreationDialog] =
+    useState(false);
+  const [newlyCreatedOrder, setNewlyCreatedOrder] = useState<Order | null>(
+    null
+  );
   const [orderOperations, setOrderOperations] = useState<any[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showTransportDialog, setShowTransportDialog] = useState(false);
@@ -464,7 +467,7 @@ export default function OrdersPage() {
         await fetchData();
         setShowAddForm(false);
         resetForm();
-        
+
         // Показываем диалог создания контейнера для нового заказа
         setNewlyCreatedOrder(createdOrder);
         setContainerCreationForm({
@@ -501,6 +504,15 @@ export default function OrdersPage() {
   const handleOrderClick = (order: Order) => {
     setSelectedOrder(order);
     if (order.status === "paid") {
+      // Для заказов со статусом paid показываем диалог создания контейнера
+      setNewlyCreatedOrder(order);
+      setContainerCreationForm({
+        volume: order.value || 0,
+        description: "",
+      });
+      setShowContainerCreationDialog(true);
+    } else if (order.status === "in_container") {
+      // Для заказов в контейнерах показываем оплату транспортировки
       setTransportForm({
         cost: 0,
         selectedContainers: [],
@@ -720,6 +732,8 @@ export default function OrdersPage() {
     switch (status) {
       case "paid":
         return "bg-blue-100 text-blue-800";
+      case "in_container":
+        return "bg-purple-100 text-purple-800";
       case "on_way":
         return "bg-yellow-100 text-yellow-800";
       case "warehouse":
@@ -737,6 +751,8 @@ export default function OrdersPage() {
     switch (status) {
       case "paid":
         return "Оплачен";
+      case "in_container":
+        return "В контейнере";
       case "on_way":
         return "В пути";
       case "warehouse":
@@ -2123,7 +2139,8 @@ export default function OrdersPage() {
                 <p className="text-sm text-gray-600">
                   Заказ: {newlyCreatedOrder.order_number}
                   <br />
-                  Общий объем: {newlyCreatedOrder.value} {newlyCreatedOrder.measurement}
+                  Общий объем: {newlyCreatedOrder.value}{" "}
+                  {newlyCreatedOrder.measurement}
                   <br />
                   Поставщик: {newlyCreatedOrder.supplier_name}
                 </p>

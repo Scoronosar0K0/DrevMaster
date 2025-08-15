@@ -60,10 +60,10 @@ export async function POST(request: NextRequest) {
       // Добавляем новый контейнер к существующим
       const updatedContainers = [...existingContainers, newContainer];
 
-      // Обновляем заказ
+      // Обновляем заказ и меняем статус на in_container
       const updateOrder = db.prepare(`
         UPDATE orders 
-        SET containers = ?, container_loads = ?
+        SET containers = ?, container_loads = ?, status = 'in_container'
         WHERE id = ?
       `);
       updateOrder.run(
