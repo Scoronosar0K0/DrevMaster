@@ -87,16 +87,16 @@ export default function OrdersPage() {
     value: 0,
     price_per_unit: 0,
     total_price: 0,
-    multipleContainers: false,
-    containerCount: 1,
-    containers: [] as ContainerLoad[],
     isCompanyLoading: false,
-    selectedContainersForPayment: [] as number[],
   });
 
   const [transportForm, setTransportForm] = useState({
     cost: 0,
     selectedContainers: [] as number[],
+    multipleContainers: false,
+    containerCount: 1,
+    containers: [] as ContainerLoad[],
+    isCompanyLoading: false,
   });
 
   const [customerFeeForm, setCustomerFeeForm] = useState({
@@ -244,7 +244,6 @@ export default function OrdersPage() {
       value: newValue,
       total_price: newTotal,
     });
-    updateContainers(newValue);
   };
 
   const handlePricePerUnitChange = (newPrice: number) => {
@@ -265,59 +264,9 @@ export default function OrdersPage() {
     });
   };
 
-  const updateContainers = (totalValue: number) => {
-    if (formData.multipleContainers) {
-      const valuePerContainer = totalValue / formData.containerCount;
-      const newContainers = Array.from(
-        { length: formData.containerCount },
-        (_, i) => ({
-          container: i + 1,
-          value: valuePerContainer,
-        })
-      );
-      setFormData({
-        ...formData,
-        containers: newContainers,
-      });
-    }
-  };
 
-  const handleContainerCountChange = (count: number) => {
-    const valuePerContainer = formData.value / count;
-    const newContainers = Array.from({ length: count }, (_, i) => ({
-      container: i + 1,
-      value: valuePerContainer,
-    }));
-    setFormData({
-      ...formData,
-      containerCount: count,
-      containers: newContainers,
-    });
-  };
 
-  const handleContainerValueChange = (
-    containerIndex: number,
-    value: number
-  ) => {
-    const newContainers = [...formData.containers];
-    newContainers[containerIndex].value = value;
-    setFormData({
-      ...formData,
-      containers: newContainers,
-    });
-  };
 
-  const getTotalLoadedValue = () => {
-    return formData.containers.reduce(
-      (total, container) => total + container.value,
-      0
-    );
-  };
-
-  const getUnloadedValue = () => {
-    const totalLoaded = getTotalLoadedValue();
-    return Math.max(0, formData.value - totalLoaded);
-  };
 
   const getOrderContainers = (order: Order): OrderContainer[] => {
     if (order.container_loads) {
@@ -390,10 +339,6 @@ export default function OrdersPage() {
     try {
       const orderData = {
         ...finalOrderData,
-        containers: formData.multipleContainers
-          ? formData.containers
-          : undefined,
-        unloaded_value: formData.multipleContainers ? getUnloadedValue() : 0,
         debt_handling: debtHandling.enabled
           ? {
               type: debtHandling.type,
@@ -405,7 +350,6 @@ export default function OrdersPage() {
           : null,
         // Новые поля для загрузки от компании
         isCompanyLoading: formData.isCompanyLoading,
-        selectedContainersForPayment: formData.selectedContainersForPayment,
         status: formData.isCompanyLoading ? "loan" : undefined, // Если загрузка от компании, то статус "loan"
       };
 
@@ -440,11 +384,7 @@ export default function OrdersPage() {
       value: 0,
       price_per_unit: 0,
       total_price: 0,
-      multipleContainers: false,
-      containerCount: 1,
-      containers: [],
       isCompanyLoading: false,
-      selectedContainersForPayment: [],
     });
     setSupplierItems([]);
   };
@@ -452,7 +392,14 @@ export default function OrdersPage() {
   const handleOrderClick = (order: Order) => {
     setSelectedOrder(order);
     if (order.status === "paid") {
-      setTransportForm({ cost: 0, selectedContainers: [] });
+      setTransportForm({ 
+        cost: 0, 
+        selectedContainers: [],
+        multipleContainers: false,
+        containerCount: 1,
+        containers: [],
+        isCompanyLoading: false,
+      });
       setShowTransportDialog(true);
     } else if (order.status === "on_way") {
       setCustomerFeeForm({ cost: 0, value: order.value });
@@ -868,6 +815,7 @@ export default function OrdersPage() {
                       value={formData.supplier_id}
                       onChange={(e) => handleSupplierChange(e.target.value)}
                       className="input-field w-full"
+                      title="Выберите поставщика"
                     >
                       <option value="">Выберите поставщика</option>
                       {suppliers.map((supplier) => (
@@ -890,6 +838,7 @@ export default function OrdersPage() {
                         setFormData({ ...formData, item_id: e.target.value })
                       }
                       className="input-field w-full"
+                      title="Выберите товар"
                       disabled={!formData.supplier_id}
                     >
                       <option value="">Выберите товар</option>
@@ -914,6 +863,7 @@ export default function OrdersPage() {
                         setFormData({ ...formData, date: e.target.value })
                       }
                       className="input-field w-full"
+                      title="Выберите дату заказа"
                     />
                   </div>
 
@@ -1219,154 +1169,27 @@ export default function OrdersPage() {
                   </div>
                 )}
 
-                {/* Чекбокс для множественных контейнеров */}
-                <div className="space-y-3">
-                  <div className="flex items-center">
-                    <input
-                      type="checkbox"
-                      id="multipleContainers"
-                      checked={formData.multipleContainers}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          multipleContainers: e.target.checked,
-                          containers: e.target.checked
-                            ? [{ container: 1, value: formData.value }]
-                            : [],
-                        })
-                      }
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label
-                      htmlFor="multipleContainers"
-                      className="ml-2 text-sm text-gray-900"
-                    >
-                      Загружается в несколько контейнеров
-                    </label>
-                  </div>
-
-                  {/* Чекбокс для загрузки от компании */}
-                  {formData.multipleContainers && (
-                    <div className="flex items-center ml-6">
-                      <input
-                        type="checkbox"
-                        id="companyLoading"
-                        checked={formData.isCompanyLoading}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            isCompanyLoading: e.target.checked,
-                          })
-                        }
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <label
-                        htmlFor="companyLoading"
-                        className="ml-2 text-sm text-gray-900"
-                      >
-                        Загружается от компании (займ)
-                      </label>
-                    </div>
-                  )}
+                {/* Чекбокс для загрузки от компании (займ) */}
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="companyLoading"
+                    checked={formData.isCompanyLoading}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        isCompanyLoading: e.target.checked,
+                      })
+                    }
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <label
+                    htmlFor="companyLoading"
+                    className="ml-2 text-sm text-gray-900"
+                  >
+                    Загружается от компании (займ)
+                  </label>
                 </div>
-
-                {/* Контейнеры */}
-                {formData.multipleContainers && (
-                  <div className="space-y-4 border-t pt-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Количество контейнеров
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="10"
-                        value={formData.containerCount}
-                        onChange={(e) =>
-                          handleContainerCountChange(
-                            parseInt(e.target.value) || 1
-                          )
-                        }
-                        className="input-field w-32"
-                      />
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {formData.containers.map((container, index) => (
-                        <div
-                          key={container.container}
-                          className={`border p-3 rounded ${
-                            formData.isCompanyLoading &&
-                            formData.selectedContainersForPayment.includes(
-                              container.container
-                            )
-                              ? "border-blue-500 bg-blue-50"
-                              : ""
-                          }`}
-                        >
-                          <div className="flex items-center justify-between mb-2">
-                            <h4 className="font-medium">
-                              Контейнер {container.container}
-                            </h4>
-                            {formData.isCompanyLoading && (
-                              <input
-                                type="checkbox"
-                                checked={formData.selectedContainersForPayment.includes(
-                                  container.container
-                                )}
-                                onChange={(e) => {
-                                  const selected =
-                                    formData.selectedContainersForPayment;
-                                  const newSelected = e.target.checked
-                                    ? [...selected, container.container]
-                                    : selected.filter(
-                                        (c) => c !== container.container
-                                      );
-                                  setFormData({
-                                    ...formData,
-                                    selectedContainersForPayment: newSelected,
-                                  });
-                                }}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                                title="Оплатить этот контейнер"
-                              />
-                            )}
-                          </div>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            max={formData.value}
-                            value={container.value}
-                            onChange={(e) =>
-                              handleContainerValueChange(
-                                index,
-                                parseFloat(e.target.value) || 0
-                              )
-                            }
-                            className="input-field w-full"
-                            placeholder={`Количество (${formData.measurement})`}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                    <div className="text-sm text-gray-600 space-y-1">
-                      <div>
-                        Общий объем: {formData.value} {formData.measurement}
-                      </div>
-                      <div>
-                        Загружено в контейнеры:{" "}
-                        {getTotalLoadedValue().toFixed(2)}{" "}
-                        {formData.measurement}
-                      </div>
-                      {getUnloadedValue() > 0 && (
-                        <div className="text-orange-600">
-                          Остаток у поставщика: {getUnloadedValue().toFixed(2)}{" "}
-                          {formData.measurement}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
 
                 {/* Кнопки */}
                 <div className="flex space-x-3 pt-4">
@@ -1421,59 +1244,216 @@ export default function OrdersPage() {
                     placeholder="0.00"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Выберите контейнеры для транспортировки:
+                {/* Чекбокс для загрузки в несколько контейнеров */}
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="multipleContainers"
+                    checked={transportForm.multipleContainers}
+                    onChange={(e) =>
+                      setTransportForm({
+                        ...transportForm,
+                        multipleContainers: e.target.checked,
+                        containerCount: e.target.checked ? 1 : 0,
+                        containers: e.target.checked
+                          ? [{ container: 1, value: selectedOrder.value }]
+                          : [],
+                      })
+                    }
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <label
+                    htmlFor="multipleContainers"
+                    className="text-sm font-medium text-gray-700"
+                  >
+                    Загружается в несколько контейнеров
                   </label>
-                  <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto">
-                    {getOrderContainers(selectedOrder).map(
-                      (container: ContainerLoad) => (
-                        <label
+                </div>
+
+                {/* Чекбокс для загрузки от компании */}
+                {transportForm.multipleContainers && (
+                  <div className="flex items-center space-x-2 ml-6">
+                    <input
+                      type="checkbox"
+                      id="companyLoadingTransport"
+                      checked={transportForm.isCompanyLoading}
+                      onChange={(e) =>
+                        setTransportForm({
+                          ...transportForm,
+                          isCompanyLoading: e.target.checked,
+                        })
+                      }
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label
+                      htmlFor="companyLoadingTransport"
+                      className="text-sm font-medium text-gray-700"
+                    >
+                      Загружается от компании (займ)
+                    </label>
+                  </div>
+                )}
+
+                {/* Создание контейнеров */}
+                {transportForm.multipleContainers && (
+                  <div className="space-y-4 border-t pt-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Количество контейнеров
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={transportForm.containerCount}
+                        onChange={(e) => {
+                          const count = parseInt(e.target.value) || 1;
+                          const valuePerContainer = selectedOrder.value / count;
+                          const newContainers = Array.from(
+                            { length: count },
+                            (_, i) => ({
+                              container: i + 1,
+                              value: valuePerContainer,
+                            })
+                          );
+                          setTransportForm({
+                            ...transportForm,
+                            containerCount: count,
+                            containers: newContainers,
+                          });
+                        }}
+                        className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        title="Введите количество контейнеров"
+                      />
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {transportForm.containers.map((container, index) => (
+                        <div
                           key={container.container}
-                          className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={transportForm.selectedContainers.includes(
+                          className={`border p-3 rounded ${
+                            transportForm.isCompanyLoading &&
+                            transportForm.selectedContainers.includes(
                               container.container
-                            )}
-                            onChange={() =>
-                              toggleContainerSelection(container.container)
-                            }
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-3"
-                          />
-                          <div className="flex-1">
-                            <div className="font-medium">
+                            )
+                              ? "border-blue-500 bg-blue-50"
+                              : ""
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="font-medium">
                               Контейнер {container.container}
-                            </div>
-                            <div className="text-sm text-gray-600">
-                              {container.value.toFixed(2)}{" "}
-                              {selectedOrder.measurement}
-                            </div>
+                            </h4>
+                            {transportForm.isCompanyLoading && (
+                              <input
+                                type="checkbox"
+                                checked={transportForm.selectedContainers.includes(
+                                  container.container
+                                )}
+                                onChange={() =>
+                                  toggleContainerSelection(container.container)
+                                }
+                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                title="Оплатить этот контейнер"
+                              />
+                            )}
                           </div>
-                        </label>
-                      )
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max={selectedOrder.value}
+                            value={container.value}
+                            onChange={(e) => {
+                              const newValue = parseFloat(e.target.value) || 0;
+                              const updatedContainers = [...transportForm.containers];
+                              updatedContainers[index] = {
+                                ...container,
+                                value: newValue,
+                              };
+                              setTransportForm({
+                                ...transportForm,
+                                containers: updatedContainers,
+                              });
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder={`Количество (${selectedOrder.measurement})`}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    
+                    <div className="text-sm text-gray-600 space-y-1">
+                      <div>
+                        Общий объем: {selectedOrder.value} {selectedOrder.measurement}
+                      </div>
+                      <div>
+                        Загружено в контейнеры:{" "}
+                        {transportForm.containers
+                          .reduce((sum, c) => sum + c.value, 0)
+                          .toFixed(2)}{" "}
+                        {selectedOrder.measurement}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Выбор существующих контейнеров (если не создаем новые) */}
+                {!transportForm.multipleContainers && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Выберите контейнеры для транспортировки:
+                    </label>
+                    <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto">
+                      {getOrderContainers(selectedOrder).map(
+                        (container: ContainerLoad) => (
+                          <label
+                            key={container.container}
+                            className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={transportForm.selectedContainers.includes(
+                                container.container
+                              )}
+                              onChange={() =>
+                                toggleContainerSelection(container.container)
+                              }
+                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-3"
+                            />
+                            <div className="flex-1">
+                              <div className="font-medium">
+                                Контейнер {container.container}
+                              </div>
+                              <div className="text-sm text-gray-600">
+                                {container.value.toFixed(2)}{" "}
+                                {selectedOrder.measurement}
+                              </div>
+                            </div>
+                          </label>
+                        )
+                      )}
+                    </div>
+                    {transportForm.selectedContainers.length > 0 && (
+                      <div className="mt-2 text-sm text-blue-600">
+                        Выбрано контейнеров:{" "}
+                        {transportForm.selectedContainers.length}
+                        <br />
+                        Общий объем:{" "}
+                        {getOrderContainers(selectedOrder)
+                          .filter((c: ContainerLoad) =>
+                            transportForm.selectedContainers.includes(c.container)
+                          )
+                          .reduce(
+                            (sum: number, c: ContainerLoad) => sum + c.value,
+                            0
+                          )
+                          .toFixed(2)}{" "}
+                        {selectedOrder.measurement}
+                      </div>
                     )}
                   </div>
-                  {transportForm.selectedContainers.length > 0 && (
-                    <div className="mt-2 text-sm text-blue-600">
-                      Выбрано контейнеров:{" "}
-                      {transportForm.selectedContainers.length}
-                      <br />
-                      Общий объем:{" "}
-                      {getOrderContainers(selectedOrder)
-                        .filter((c: ContainerLoad) =>
-                          transportForm.selectedContainers.includes(c.container)
-                        )
-                        .reduce(
-                          (sum: number, c: ContainerLoad) => sum + c.value,
-                          0
-                        )
-                        .toFixed(2)}{" "}
-                      {selectedOrder.measurement}
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
               <div className="flex space-x-3 mt-6">
                 <button
@@ -1675,6 +1655,7 @@ export default function OrdersPage() {
                       })
                     }
                     className="input-field w-full"
+                    title="Выберите дату продажи"
                   />
                 </div>
 
@@ -1732,6 +1713,7 @@ export default function OrdersPage() {
                           });
                         }}
                         className="input-field w-full"
+                        title="Выберите менеджера"
                       >
                         <option value="">Выберите менеджера</option>
                         {managers.map((manager) => (
@@ -1829,6 +1811,7 @@ export default function OrdersPage() {
                               });
                             }}
                             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-3"
+                            title="Выбрать контейнер для оплаты"
                           />
                           <div className="flex-1">
                             <div className="font-medium">
