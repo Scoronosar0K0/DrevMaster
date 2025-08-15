@@ -62,6 +62,7 @@ export default function OrdersPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [showLoanPaymentDialog, setShowLoanPaymentDialog] = useState(false);
   const [showOrderDetailsDialog, setShowOrderDetailsDialog] = useState(false);
+  const [showOrderExpenseDialog, setShowOrderExpenseDialog] = useState(false);
   const [orderOperations, setOrderOperations] = useState<any[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showTransportDialog, setShowTransportDialog] = useState(false);
@@ -121,6 +122,11 @@ export default function OrdersPage() {
       cost: number;
       description: string;
     }[],
+  });
+
+  const [orderExpenseForm, setOrderExpenseForm] = useState({
+    amount: 0,
+    description: "",
   });
 
   useEffect(() => {
@@ -219,6 +225,48 @@ export default function OrdersPage() {
     setShowOrderDetailsDialog(true);
   };
 
+  const handleAddOrderExpense = (order: Order) => {
+    setSelectedOrder(order);
+    setOrderExpenseForm({ amount: 0, description: "" });
+    setShowOrderExpenseDialog(true);
+  };
+
+  const handleSubmitOrderExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!selectedOrder || orderExpenseForm.amount <= 0) {
+      alert("Введите сумму расхода");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/orders/add-expense", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          order_id: selectedOrder.id,
+          amount: orderExpenseForm.amount,
+          description: orderExpenseForm.description,
+        }),
+      });
+
+      if (response.ok) {
+        alert("Операционный расход добавлен!");
+        setShowOrderExpenseDialog(false);
+        setOrderExpenseForm({ amount: 0, description: "" });
+        fetchData(); // Обновляем данные
+      } else {
+        const error = await response.json();
+        alert(`Ошибка: ${error.error}`);
+      }
+    } catch (error) {
+      console.error("Ошибка добавления расхода:", error);
+      alert("Ошибка добавления расхода");
+    }
+  };
+
   const handleSupplierChange = (supplierId: string) => {
     setFormData({
       ...formData,
@@ -263,10 +311,6 @@ export default function OrdersPage() {
       price_per_unit: newPricePerUnit,
     });
   };
-
-
-
-
 
   const getOrderContainers = (order: Order): OrderContainer[] => {
     if (order.container_loads) {
@@ -392,8 +436,8 @@ export default function OrdersPage() {
   const handleOrderClick = (order: Order) => {
     setSelectedOrder(order);
     if (order.status === "paid") {
-      setTransportForm({ 
-        cost: 0, 
+      setTransportForm({
+        cost: 0,
         selectedContainers: [],
         multipleContainers: false,
         containerCount: 1,
@@ -766,6 +810,30 @@ export default function OrdersPage() {
                           strokeLinejoin="round"
                           strokeWidth={2}
                           d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                        />
+                      </svg>
+                    </button>
+                    
+                    {/* Кнопка добавления операционных расходов */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleAddOrderExpense(order);
+                      }}
+                      className="text-green-600 hover:text-green-800 p-2 hover:bg-green-50 rounded-lg transition-colors ml-2"
+                      title="Добавить операционные расходы"
+                    >
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 6v6m0 0v6m0-6h6m-6 0H6"
                         />
                       </svg>
                     </button>
@@ -1326,7 +1394,7 @@ export default function OrdersPage() {
                         title="Введите количество контейнеров"
                       />
                     </div>
-                    
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {transportForm.containers.map((container, index) => (
                         <div
@@ -1366,7 +1434,9 @@ export default function OrdersPage() {
                             value={container.value}
                             onChange={(e) => {
                               const newValue = parseFloat(e.target.value) || 0;
-                              const updatedContainers = [...transportForm.containers];
+                              const updatedContainers = [
+                                ...transportForm.containers,
+                              ];
                               updatedContainers[index] = {
                                 ...container,
                                 value: newValue,
@@ -1382,10 +1452,11 @@ export default function OrdersPage() {
                         </div>
                       ))}
                     </div>
-                    
+
                     <div className="text-sm text-gray-600 space-y-1">
                       <div>
-                        Общий объем: {selectedOrder.value} {selectedOrder.measurement}
+                        Общий объем: {selectedOrder.value}{" "}
+                        {selectedOrder.measurement}
                       </div>
                       <div>
                         Загружено в контейнеры:{" "}
@@ -1442,7 +1513,9 @@ export default function OrdersPage() {
                         Общий объем:{" "}
                         {getOrderContainers(selectedOrder)
                           .filter((c: ContainerLoad) =>
-                            transportForm.selectedContainers.includes(c.container)
+                            transportForm.selectedContainers.includes(
+                              c.container
+                            )
                           )
                           .reduce(
                             (sum: number, c: ContainerLoad) => sum + c.value,
@@ -1503,7 +1576,8 @@ export default function OrdersPage() {
                     onChange={(e) =>
                       setCustomerFeeForm({
                         ...customerFeeForm,
-                        value: parseFloat(e.target.value) || selectedOrder.value,
+                        value:
+                          parseFloat(e.target.value) || selectedOrder.value,
                       })
                     }
                     className="input-field w-full"
@@ -1958,6 +2032,94 @@ export default function OrdersPage() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Диалог добавления операционных расходов */}
+      {showOrderExpenseDialog && selectedOrder && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-bold text-gray-900">
+                  Добавить операционные расходы
+                </h3>
+                <button
+                  onClick={() => setShowOrderExpenseDialog(false)}
+                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="mb-4">
+                <p className="text-sm text-gray-600">
+                  Заказ: {selectedOrder.order_number}
+                  <br />
+                  Поставщик: {selectedOrder.supplier_name}
+                </p>
+              </div>
+
+              <form onSubmit={handleSubmitOrderExpense} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Сумма расхода ($) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    value={orderExpenseForm.amount || ""}
+                    onChange={(e) =>
+                      setOrderExpenseForm({
+                        ...orderExpenseForm,
+                        amount: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="0.00"
+                    title="Введите сумму операционного расхода"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Описание
+                  </label>
+                  <textarea
+                    value={orderExpenseForm.description}
+                    onChange={(e) =>
+                      setOrderExpenseForm({
+                        ...orderExpenseForm,
+                        description: e.target.value,
+                      })
+                    }
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    rows={3}
+                    placeholder="Описание операционного расхода (необязательно)"
+                    title="Введите описание расхода"
+                  />
+                </div>
+
+                <div className="flex space-x-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowOrderExpenseDialog(false)}
+                    className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+                  >
+                    Добавить расход
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>

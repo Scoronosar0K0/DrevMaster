@@ -15,6 +15,8 @@ interface Loan {
   order_number?: string;
   is_paid: boolean;
   created_at: string;
+  loan_date?: string;
+  description?: string;
 }
 
 export default function CashPage() {
@@ -27,7 +29,9 @@ export default function CashPage() {
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [showPartialPaymentDialog, setShowPartialPaymentDialog] =
     useState(false);
+  const [showLoanDetailsDialog, setShowLoanDetailsDialog] = useState(false);
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
+  const [loanPayments, setLoanPayments] = useState<any[]>([]);
   const [partialPaymentForm, setPartialPaymentForm] = useState({
     amount: 0,
   });
@@ -36,7 +40,7 @@ export default function CashPage() {
     partner_id: "",
     amount: 0,
     description: "",
-    loan_date: new Date().toISOString().split('T')[0],
+    loan_date: new Date().toISOString().split("T")[0],
     from_admin: false,
   });
 
@@ -100,7 +104,10 @@ export default function CashPage() {
   const handleLoanSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if ((!loanForm.from_admin && !loanForm.partner_id) || loanForm.amount <= 0) {
+    if (
+      (!loanForm.from_admin && !loanForm.partner_id) ||
+      loanForm.amount <= 0
+    ) {
       alert("Выберите источник займа и укажите сумму");
       return;
     }
@@ -116,11 +123,11 @@ export default function CashPage() {
 
       if (response.ok) {
         alert("Займ выдан успешно!");
-        setLoanForm({ 
-          partner_id: "", 
-          amount: 0, 
+        setLoanForm({
+          partner_id: "",
+          amount: 0,
           description: "",
-          loan_date: new Date().toISOString().split('T')[0],
+          loan_date: new Date().toISOString().split("T")[0],
           from_admin: false,
         });
         setShowLoanForm(false);
@@ -277,6 +284,26 @@ export default function CashPage() {
     }
   };
 
+  const viewLoanDetails = async (loan: Loan) => {
+    setSelectedLoan(loan);
+    
+    try {
+      // Загружаем историю платежей по займу
+      const response = await fetch(`/api/loans/${loan.id}/payments`);
+      if (response.ok) {
+        const payments = await response.json();
+        setLoanPayments(payments);
+      } else {
+        setLoanPayments([]);
+      }
+    } catch (error) {
+      console.error("Ошибка загрузки платежей:", error);
+      setLoanPayments([]);
+    }
+    
+    setShowLoanDetailsDialog(true);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -402,22 +429,33 @@ export default function CashPage() {
                           {new Date(loan.created_at).toLocaleDateString()}
                         </p>
                       </div>
-                      {!loan.is_paid && (
-                        <div className="flex flex-col sm:flex-row gap-2">
-                          <button
-                            onClick={() => payLoan(loan.id, true)}
-                            className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1.5 rounded text-sm font-medium transition-colors"
-                          >
-                            Частично
-                          </button>
-                          <button
-                            onClick={() => payLoan(loan.id, false)}
-                            className="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded text-sm font-medium transition-colors"
-                          >
-                            Полностью
-                          </button>
-                        </div>
-                      )}
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        {/* Кнопка просмотра всегда доступна */}
+                        <button
+                          onClick={() => viewLoanDetails(loan)}
+                          className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded text-sm font-medium transition-colors"
+                        >
+                          Просмотр
+                        </button>
+                        
+                        {/* Кнопки оплаты только для неоплаченных займов */}
+                        {!loan.is_paid && (
+                          <>
+                            <button
+                              onClick={() => payLoan(loan.id, true)}
+                              className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1.5 rounded text-sm font-medium transition-colors"
+                            >
+                              Частично
+                            </button>
+                            <button
+                              onClick={() => payLoan(loan.id, false)}
+                              className="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded text-sm font-medium transition-colors"
+                            >
+                              Полностью
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -659,11 +697,18 @@ export default function CashPage() {
                     id="from_admin"
                     checked={loanForm.from_admin}
                     onChange={(e) =>
-                      setLoanForm({ ...loanForm, from_admin: e.target.checked, partner_id: e.target.checked ? "" : loanForm.partner_id })
+                      setLoanForm({
+                        ...loanForm,
+                        from_admin: e.target.checked,
+                        partner_id: e.target.checked ? "" : loanForm.partner_id,
+                      })
                     }
                     className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
                   />
-                  <label htmlFor="from_admin" className="text-sm font-medium text-gray-700">
+                  <label
+                    htmlFor="from_admin"
+                    className="text-sm font-medium text-gray-700"
+                  >
                     Займ от администратора
                   </label>
                 </div>
@@ -761,6 +806,107 @@ export default function CashPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Диалог просмотра деталей займа */}
+      {showLoanDetailsDialog && selectedLoan && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold">Детали займа</h2>
+              <button
+                onClick={() => setShowLoanDetailsDialog(false)}
+                className="text-gray-400 hover:text-gray-600 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Основная информация о займе */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h3 className="font-semibold mb-3">Информация о займе</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-sm text-gray-600">Партнер:</span>
+                    <p className="font-medium">{selectedLoan.partner_name}</p>
+                  </div>
+                  <div>
+                    <span className="text-sm text-gray-600">Сумма:</span>
+                    <p className="font-medium text-red-600">${selectedLoan.amount.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <span className="text-sm text-gray-600">Дата займа:</span>
+                    <p className="font-medium">
+                      {selectedLoan.loan_date ? 
+                        new Date(selectedLoan.loan_date).toLocaleDateString("ru-RU") : 
+                        new Date(selectedLoan.created_at).toLocaleDateString("ru-RU")}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-sm text-gray-600">Статус:</span>
+                    <p className={`font-medium ${selectedLoan.is_paid ? 'text-green-600' : 'text-red-600'}`}>
+                      {selectedLoan.is_paid ? 'Оплачен' : 'Не оплачен'}
+                    </p>
+                  </div>
+                  {selectedLoan.order_number && (
+                    <div className="md:col-span-2">
+                      <span className="text-sm text-gray-600">Связанный заказ:</span>
+                      <p className="font-medium">#{selectedLoan.order_number}</p>
+                    </div>
+                  )}
+                  {selectedLoan.description && (
+                    <div className="md:col-span-2">
+                      <span className="text-sm text-gray-600">Описание:</span>
+                      <p className="font-medium">{selectedLoan.description}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* История платежей */}
+              {loanPayments.length > 0 && (
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h3 className="font-semibold mb-3">История платежей</h3>
+                  <div className="space-y-2">
+                    {loanPayments.map((payment, index) => (
+                      <div key={index} className="flex justify-between items-center py-2 border-b border-gray-200 last:border-b-0">
+                        <div>
+                          <p className="font-medium">${payment.amount.toLocaleString()}</p>
+                          <p className="text-sm text-gray-600">
+                            {new Date(payment.payment_date).toLocaleDateString("ru-RU")}
+                          </p>
+                        </div>
+                        <span className="text-sm text-green-600">Оплачено</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Кнопки действий */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => setShowLoanDetailsDialog(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Закрыть
+                </button>
+                {!selectedLoan.is_paid && (
+                  <button
+                    onClick={() => {
+                      setShowLoanDetailsDialog(false);
+                      setShowPartialPaymentDialog(true);
+                    }}
+                    className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                  >
+                    Оплатить
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

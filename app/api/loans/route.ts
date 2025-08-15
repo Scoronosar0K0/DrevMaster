@@ -70,7 +70,10 @@ export async function POST(request: NextRequest) {
         .prepare("SELECT id FROM partners WHERE id = ?")
         .get(partner_id);
       if (!partner) {
-        return NextResponse.json({ error: "Партнер не найден" }, { status: 404 });
+        return NextResponse.json(
+          { error: "Партнер не найден" },
+          { status: 404 }
+        );
       }
     }
 
@@ -81,15 +84,26 @@ export async function POST(request: NextRequest) {
         INSERT INTO loans (partner_id, amount, loan_date, description, is_paid)
         VALUES (?, ?, ?, ?, false)
       `);
-      insertLoan.run(finalPartnerId, amount, loan_date || null, description || null);
+      insertLoan.run(
+        finalPartnerId,
+        amount,
+        loan_date || null,
+        description || null
+      );
 
       // Логируем активность
       const insertLog = db.prepare(`
         INSERT INTO activity_logs (user_id, action, entity_type, details)
         VALUES (1, 'займ_взят', 'loan', ?)
       `);
-      const loanSource = from_admin ? "администратора" : `партнера ID: ${partner_id}`;
-      insertLog.run(`Займ на сумму $${amount} от ${loanSource}${description ? ` (${description})` : ''}`);
+      const loanSource = from_admin
+        ? "администратора"
+        : `партнера ID: ${partner_id}`;
+      insertLog.run(
+        `Займ на сумму $${amount} от ${loanSource}${
+          description ? ` (${description})` : ""
+        }`
+      );
     });
 
     transaction();

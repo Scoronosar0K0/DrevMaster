@@ -9,10 +9,7 @@ export async function POST(request: Request) {
 
     // Проверяем пароль
     if (password !== "Manuchehr1981") {
-      return NextResponse.json(
-        { error: "Неверный пароль" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Неверный пароль" }, { status: 401 });
     }
     // Отключаем проверку внешних ключей для очистки
     db.pragma("foreign_keys = OFF");
@@ -68,11 +65,15 @@ export async function POST(request: Request) {
       // Создаем нового админа с паролем "admin"
       try {
         const hashedPassword = bcrypt.hashSync("admin", 10);
-        db.prepare(`
+        db.prepare(
+          `
           INSERT INTO users (username, password, role, name, email, is_active)
           VALUES ('admin', ?, 'admin', 'Администратор', 'admin@drevmaster.com', true)
-        `).run(hashedPassword);
-        console.log("Создан новый администратор с логином: admin, паролем: admin");
+        `
+        ).run(hashedPassword);
+        console.log(
+          "Создан новый администратор с логином: admin, паролем: admin"
+        );
       } catch (e) {
         console.log("Ошибка при создании администратора:", e);
       }
@@ -97,7 +98,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: "База данных полностью очищена. Создан новый администратор. Логин: admin, Пароль: admin",
+      message:
+        "База данных полностью очищена. Создан новый администратор. Логин: admin, Пароль: admin",
     });
   } catch (error) {
     // Включаем обратно проверку внешних ключей в случае ошибки
