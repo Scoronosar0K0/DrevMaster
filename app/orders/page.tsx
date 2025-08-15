@@ -63,6 +63,8 @@ export default function OrdersPage() {
   const [showLoanPaymentDialog, setShowLoanPaymentDialog] = useState(false);
   const [showOrderDetailsDialog, setShowOrderDetailsDialog] = useState(false);
   const [showOrderExpenseDialog, setShowOrderExpenseDialog] = useState(false);
+  const [showContainerCreationDialog, setShowContainerCreationDialog] = useState(false);
+  const [newlyCreatedOrder, setNewlyCreatedOrder] = useState<Order | null>(null);
   const [orderOperations, setOrderOperations] = useState<any[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showTransportDialog, setShowTransportDialog] = useState(false);
@@ -126,6 +128,11 @@ export default function OrdersPage() {
 
   const [orderExpenseForm, setOrderExpenseForm] = useState({
     amount: 0,
+    description: "",
+  });
+
+  const [containerCreationForm, setContainerCreationForm] = useState({
+    volume: 0,
     description: "",
   });
 
@@ -267,6 +274,54 @@ export default function OrdersPage() {
     }
   };
 
+  const handleCreateContainer = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!newlyCreatedOrder || containerCreationForm.volume <= 0) {
+      alert("Введите корректный объем контейнера");
+      return;
+    }
+
+    if (containerCreationForm.volume > newlyCreatedOrder.value) {
+      alert("Объем контейнера не может превышать общий объем заказа");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/orders/create-container", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          order_id: newlyCreatedOrder.id,
+          volume: containerCreationForm.volume,
+          description: containerCreationForm.description,
+        }),
+      });
+
+      if (response.ok) {
+        alert("Контейнер создан успешно!");
+        setShowContainerCreationDialog(false);
+        setNewlyCreatedOrder(null);
+        setContainerCreationForm({ volume: 0, description: "" });
+        fetchData(); // Обновляем данные
+      } else {
+        const error = await response.json();
+        alert(`Ошибка: ${error.error}`);
+      }
+    } catch (error) {
+      console.error("Ошибка создания контейнера:", error);
+      alert("Ошибка создания контейнера");
+    }
+  };
+
+  const handleSkipContainer = () => {
+    setShowContainerCreationDialog(false);
+    setNewlyCreatedOrder(null);
+    setContainerCreationForm({ volume: 0, description: "" });
+  };
+
   const handleSupplierChange = (supplierId: string) => {
     setFormData({
       ...formData,
@@ -404,9 +459,19 @@ export default function OrdersPage() {
       });
 
       if (response.ok) {
+        const result = await response.json();
+        const createdOrder = result.order;
         await fetchData();
         setShowAddForm(false);
         resetForm();
+        
+        // Показываем диалог создания контейнера для нового заказа
+        setNewlyCreatedOrder(createdOrder);
+        setContainerCreationForm({
+          volume: createdOrder.value || 0,
+          description: "",
+        });
+        setShowContainerCreationDialog(true);
       } else {
         const error = await response.json();
         alert(`Ошибка: ${error.error}`);
@@ -813,7 +878,7 @@ export default function OrdersPage() {
                         />
                       </svg>
                     </button>
-                    
+
                     {/* Кнопка добавления операционных расходов */}
                     <button
                       onClick={(e) => {
@@ -2032,6 +2097,97 @@ export default function OrdersPage() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Диалог создания контейнера для нового заказа */}
+      {showContainerCreationDialog && newlyCreatedOrder && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-bold text-gray-900">
+                  Создать контейнер
+                </h3>
+                <button
+                  onClick={handleSkipContainer}
+                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="mb-4">
+                <p className="text-sm text-gray-600">
+                  Заказ: {newlyCreatedOrder.order_number}
+                  <br />
+                  Общий объем: {newlyCreatedOrder.value} {newlyCreatedOrder.measurement}
+                  <br />
+                  Поставщик: {newlyCreatedOrder.supplier_name}
+                </p>
+              </div>
+
+              <form onSubmit={handleCreateContainer} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Объем контейнера ({newlyCreatedOrder.measurement}) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max={newlyCreatedOrder.value}
+                    required
+                    value={containerCreationForm.volume || ""}
+                    onChange={(e) =>
+                      setContainerCreationForm({
+                        ...containerCreationForm,
+                        volume: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder={`Максимум: ${newlyCreatedOrder.value}`}
+                    title="Введите объем контейнера"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Описание контейнера
+                  </label>
+                  <textarea
+                    value={containerCreationForm.description}
+                    onChange={(e) =>
+                      setContainerCreationForm({
+                        ...containerCreationForm,
+                        description: e.target.value,
+                      })
+                    }
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    rows={3}
+                    placeholder="Описание контейнера (необязательно)"
+                    title="Введите описание контейнера"
+                  />
+                </div>
+
+                <div className="flex space-x-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={handleSkipContainer}
+                    className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Пропустить
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                  >
+                    Создать контейнер
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>

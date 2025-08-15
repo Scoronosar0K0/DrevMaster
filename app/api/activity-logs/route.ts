@@ -5,8 +5,8 @@ initDatabase();
 
 export async function GET(request: NextRequest) {
   try {
-    // Получаем параметры из URL без использования request.url для статической генерации
-    const url = new URL(request.nextUrl);
+    // Получаем параметры из URL 
+    const url = new URL(request.url);
     const action = url.searchParams.get("action");
     const entityType = url.searchParams.get("entity_type");
     const user = url.searchParams.get("user");

@@ -129,6 +129,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Начинаем транзакцию
+    let orderId: number = 0;
     const transaction = db.transaction(() => {
       // Определяем статус заказа
       const orderStatus = status || "paid";
@@ -156,6 +157,8 @@ export async function POST(request: NextRequest) {
         multipleContainers ? containers?.length || 1 : 1,
         multipleContainers ? JSON.stringify(containers) : null
       );
+      
+      orderId = orderResult.lastInsertRowid as number;
 
       // Если есть незагруженный объем, создаем долг у поставщика
       if (unloaded_value && unloaded_value > 0) {
@@ -279,7 +282,21 @@ export async function POST(request: NextRequest) {
 
     transaction();
 
-    return NextResponse.json({ success: true });
+    // Получаем созданный заказ для возврата
+    const createdOrder = db
+      .prepare(`
+        SELECT o.*, s.name as supplier_name, si.name as item_name
+        FROM orders o
+        LEFT JOIN suppliers s ON o.supplier_id = s.id
+        LEFT JOIN supplier_items si ON o.item_id = si.id
+        WHERE o.id = ?
+      `)
+      .get(orderId) as any;
+
+    return NextResponse.json({ 
+      success: true, 
+      order: createdOrder 
+    });
   } catch (error) {
     console.error("Ошибка создания заказа:", error);
     return NextResponse.json(

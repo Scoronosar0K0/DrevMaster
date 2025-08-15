@@ -41,7 +41,6 @@ export default function CashPage() {
     amount: 0,
     description: "",
     loan_date: new Date().toISOString().split("T")[0],
-    from_admin: false,
   });
 
   const [incomeForm, setIncomeForm] = useState({
@@ -104,21 +103,26 @@ export default function CashPage() {
   const handleLoanSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (
-      (!loanForm.from_admin && !loanForm.partner_id) ||
-      loanForm.amount <= 0
-    ) {
-      alert("Выберите источник займа и укажите сумму");
+    if (!loanForm.partner_id || loanForm.amount <= 0) {
+      alert("Выберите партнера и укажите сумму");
       return;
     }
 
     try {
+      // Определяем, является ли это займом от администратора
+      const from_admin = loanForm.partner_id === "admin";
+      
       const response = await fetch("/api/loans", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(loanForm),
+        body: JSON.stringify({
+          ...loanForm,
+          from_admin,
+          // Если от админа, то partner_id не нужен
+          partner_id: from_admin ? undefined : loanForm.partner_id,
+        }),
       });
 
       if (response.ok) {
@@ -128,7 +132,6 @@ export default function CashPage() {
           amount: 0,
           description: "",
           loan_date: new Date().toISOString().split("T")[0],
-          from_admin: false,
         });
         setShowLoanForm(false);
         fetchData();
@@ -690,53 +693,31 @@ export default function CashPage() {
               </div>
 
               <form onSubmit={handleLoanSubmit} className="space-y-4">
-                {/* Чекбокс "От администратора" */}
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="from_admin"
-                    checked={loanForm.from_admin}
-                    onChange={(e) =>
-                      setLoanForm({
-                        ...loanForm,
-                        from_admin: e.target.checked,
-                        partner_id: e.target.checked ? "" : loanForm.partner_id,
-                      })
-                    }
-                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                  />
-                  <label
-                    htmlFor="from_admin"
-                    className="text-sm font-medium text-gray-700"
-                  >
-                    Займ от администратора
+                {/* Партнер */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Партнер *
                   </label>
+                  <select
+                    required
+                    value={loanForm.partner_id}
+                    onChange={(e) =>
+                      setLoanForm({ ...loanForm, partner_id: e.target.value })
+                    }
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    title="Выберите партнера для займа"
+                  >
+                    <option value="">Выберите партнера</option>
+                    {/* Опция для администратора */}
+                    <option value="admin">Администратор</option>
+                    {/* Обычные партнеры */}
+                    {partners.map((partner) => (
+                      <option key={partner.id} value={partner.id}>
+                        {partner.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-
-                {/* Партнер (показываем только если НЕ от админа) */}
-                {!loanForm.from_admin && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Партнер *
-                    </label>
-                    <select
-                      required={!loanForm.from_admin}
-                      value={loanForm.partner_id}
-                      onChange={(e) =>
-                        setLoanForm({ ...loanForm, partner_id: e.target.value })
-                      }
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      title="Выберите партнера для займа"
-                    >
-                      <option value="">Выберите партнера</option>
-                      {partners.map((partner) => (
-                        <option key={partner.id} value={partner.id}>
-                          {partner.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
 
                 {/* Дата получения займа */}
                 <div>
