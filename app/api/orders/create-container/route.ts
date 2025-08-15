@@ -17,7 +17,13 @@ export async function POST(request: NextRequest) {
 
     // Проверяем, что заказ существует
     const order = db
-      .prepare("SELECT id, order_number, value, measurement, container_loads FROM orders WHERE id = ?")
+      .prepare(`
+        SELECT o.*, s.name as supplier_name, si.name as item_name 
+        FROM orders o
+        LEFT JOIN suppliers s ON o.supplier_id = s.id
+        LEFT JOIN supplier_items si ON o.item_id = si.id
+        WHERE o.id = ?
+      `)
       .get(order_id) as any;
 
     if (!order) {
@@ -59,20 +65,65 @@ export async function POST(request: NextRequest) {
 
       // Добавляем новый контейнер к существующим
       const updatedContainers = [...existingContainers, newContainer];
+      const totalContainerVolume = updatedContainers.reduce((sum, container) => sum + (container.value || 0), 0);
 
-      // Обновляем заказ и меняем статус на in_container
+      // Проверяем, нужно ли создать новый заказ с оставшимся объемом
+      const remainingAfterContainer = order.value - totalContainerVolume;
+      let newOrderId = null;
+
+      if (remainingAfterContainer > 0) {
+        // Создаем новый заказ с оставшимся объемом
+        const insertNewOrder = db.prepare(`
+          INSERT INTO orders (
+            order_number, supplier_id, item_id, date, description, measurement,
+            value, price_per_unit, total_price, status, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', datetime('now'))
+        `);
+
+        const newOrderNumber = `${order.order_number}-remaining`;
+        const newTotalPrice = remainingAfterContainer * (order.price_per_unit || 0);
+
+        const result = insertNewOrder.run(
+          newOrderNumber,
+          order.supplier_id,
+          order.item_id,
+          order.date,
+          `${order.description || ''} (оставшийся объем)`.trim(),
+          order.measurement,
+          remainingAfterContainer,
+          order.price_per_unit,
+          newTotalPrice
+        );
+
+        newOrderId = result.lastInsertRowid;
+
+        // Логируем создание нового заказа
+        const insertLogNewOrder = db.prepare(`
+          INSERT INTO activity_logs (user_id, action, entity_type, details)
+          VALUES (1, 'создание_заказа', 'order', ?)
+        `);
+        insertLogNewOrder.run(
+          `Создан новый заказ ${newOrderNumber} с оставшимся объемом ${remainingAfterContainer} ${order.measurement} от заказа ${order.order_number}`
+        );
+      }
+
+      // Обновляем исходный заказ - устанавливаем объем равным объему в контейнерах
       const updateOrder = db.prepare(`
         UPDATE orders 
-        SET containers = ?, container_loads = ?, status = 'in_container'
+        SET value = ?, total_price = ?, containers = ?, container_loads = ?, status = 'in_container'
         WHERE id = ?
       `);
+      
+      const containerTotalPrice = totalContainerVolume * (order.price_per_unit || 0);
       updateOrder.run(
+        totalContainerVolume,
+        containerTotalPrice,
         updatedContainers.length,
         JSON.stringify(updatedContainers),
         order_id
       );
 
-      // Логируем активность
+      // Логируем создание контейнера
       const insertLog = db.prepare(`
         INSERT INTO activity_logs (user_id, action, entity_type, details)
         VALUES (1, 'создание_контейнера', 'order', ?)

@@ -304,7 +304,19 @@ export default function OrdersPage() {
       });
 
       if (response.ok) {
-        alert("Контейнер создан успешно!");
+        const result = await response.json();
+        let message = "Контейнер создан успешно!";
+
+        // Проверяем, был ли создан новый заказ с оставшимся объемом
+        if (containerCreationForm.volume < newlyCreatedOrder.value) {
+          message += `\n\nЗаказ разделен:\n- ${containerCreationForm.volume} ${
+            newlyCreatedOrder.measurement
+          } в контейнере\n- ${
+            newlyCreatedOrder.value - containerCreationForm.volume
+          } ${newlyCreatedOrder.measurement} осталось в новом заказе`;
+        }
+
+        alert(message);
         setShowContainerCreationDialog(false);
         setNewlyCreatedOrder(null);
         setContainerCreationForm({ volume: 0, description: "" });
@@ -2144,6 +2156,24 @@ export default function OrdersPage() {
                   <br />
                   Поставщик: {newlyCreatedOrder.supplier_name}
                 </p>
+
+                {containerCreationForm.volume > 0 &&
+                  containerCreationForm.volume < newlyCreatedOrder.value && (
+                    <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-sm text-blue-800 font-medium mb-1">
+                        ⚠️ Внимание: Частичное заполнение
+                      </p>
+                      <p className="text-xs text-blue-700">
+                        При создании контейнера на{" "}
+                        {containerCreationForm.volume}{" "}
+                        {newlyCreatedOrder.measurement}
+                        будет создан новый заказ с оставшимся объемом:{" "}
+                        {newlyCreatedOrder.value -
+                          containerCreationForm.volume}{" "}
+                        {newlyCreatedOrder.measurement}
+                      </p>
+                    </div>
+                  )}
               </div>
 
               <form onSubmit={handleCreateContainer} className="space-y-4">
