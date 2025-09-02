@@ -5,7 +5,6 @@ initDatabase();
 
 export async function GET() {
   try {
-    
     const loans = db
       .prepare(
         `
@@ -44,7 +43,6 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    
     const body = await request.json();
     const { partner_id, amount, description, loan_date, from_admin } = body;
 

@@ -376,7 +376,9 @@ export function initDatabase() {
     const orderIdColumn = tableInfo.find((col) => col.name === "order_id");
 
     const loanDateColumn = tableInfo.find((col) => col.name === "loan_date");
-    const descriptionColumn = tableInfo.find((col) => col.name === "description");
+    const descriptionColumn = tableInfo.find(
+      (col) => col.name === "description"
+    );
 
     if (orderIdColumn && orderIdColumn.notnull === 1) {
       // Если order_id NOT NULL, пересоздаем таблицу
@@ -415,7 +417,7 @@ export function initDatabase() {
         console.log("Добавляем колонку 'loan_date' в таблицу loans...");
         db.exec(`ALTER TABLE loans ADD COLUMN loan_date TEXT`);
       }
-      
+
       if (!descriptionColumn) {
         console.log("Добавляем колонку 'description' в таблицу loans...");
         db.exec(`ALTER TABLE loans ADD COLUMN description TEXT`);
@@ -519,44 +521,25 @@ export function initDatabase() {
 
   // Миграция для добавления статуса 'in_container' в таблицу orders
   try {
-    // Проверяем, что миграция еще не была выполнена
-    const migrationCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='orders_old'").get() as any;
-    
-    if (migrationCheck) {
-      console.log("Миграция orders уже выполняется или была прервана, пропускаем...");
-      return;
-    }
-    
-    // Дополнительная проверка - если таблица orders_old существует, удаляем её
-    try {
-      db.exec("DROP TABLE IF EXISTS orders_old");
-      console.log("Удалена существующая таблица orders_old");
-    } catch (e) {
-      // Игнорируем ошибки при удалении
-    }
-    
     // Проверяем существующий CHECK constraint
-    const sql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='orders'").get() as any;
-    
+    const sql = db
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='orders'"
+      )
+      .get() as any;
+
     if (sql && sql.sql && !sql.sql.includes("'in_container'")) {
       console.log("Миграция orders: добавляем статус 'in_container'...");
-      
+
       // Получаем все данные
       const existingOrders = db.prepare("SELECT * FROM orders").all();
-      
+
       // Отключаем foreign keys временно
       db.pragma("foreign_keys = OFF");
-      
-      // Проверяем, существует ли таблица orders_old и удаляем её если есть
-      try {
-        db.exec("DROP TABLE IF EXISTS orders_old");
-      } catch (e) {
-        // Игнорируем ошибки
-      }
-      
+
       // Переименовываем старую таблицу
       db.exec("ALTER TABLE orders RENAME TO orders_old");
-      
+
       // Создаем новую таблицу с обновленным CHECK constraint
       db.exec(`
         CREATE TABLE orders (
@@ -580,7 +563,7 @@ export function initDatabase() {
           FOREIGN KEY (item_id) REFERENCES supplier_items (id)
         )
       `);
-      
+
       // Восстанавливаем данные
       const insertOrder = db.prepare(`
         INSERT INTO orders (
@@ -590,7 +573,7 @@ export function initDatabase() {
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
-      
+
       for (const order of existingOrders) {
         try {
           insertOrder.run(
@@ -615,20 +598,14 @@ export function initDatabase() {
           console.log(`Ошибка восстановления заказа ${order.id}:`, e);
         }
       }
-      
+
       // Удаляем старую таблицу
-      try {
-        db.exec("DROP TABLE orders_old");
-      } catch (e) {
-        console.log("Таблица orders_old уже удалена или не существует");
-      }
-      
+      db.exec("DROP TABLE orders_old");
+
       // Включаем foreign keys обратно
       db.pragma("foreign_keys = ON");
-      
+
       console.log("Миграция orders завершена");
-    } else {
-      console.log("Миграция orders не требуется - статус 'in_container' уже присутствует");
     }
   } catch (error) {
     console.log("Ошибка при миграции orders:", error);

@@ -17,20 +17,13 @@ export async function POST(request: NextRequest) {
 
     // Проверяем, что заказ существует
     const order = db
-      .prepare(`
-        SELECT o.*, s.name as supplier_name, si.name as item_name 
-        FROM orders o
-        LEFT JOIN suppliers s ON o.supplier_id = s.id
-        LEFT JOIN supplier_items si ON o.item_id = si.id
-        WHERE o.id = ?
-      `)
+      .prepare(
+        "SELECT id, order_number, value, measurement, container_loads FROM orders WHERE id = ?"
+      )
       .get(order_id) as any;
 
     if (!order) {
-      return NextResponse.json(
-        { error: "Заказ не найден" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Заказ не найден" }, { status: 404 });
     }
 
     // Проверяем, не превышает ли объем контейнера общий объем заказа
@@ -43,106 +36,112 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const existingVolume = existingContainers.reduce((sum, container) => sum + (container.value || 0), 0);
+    const existingVolume = existingContainers.reduce(
+      (sum, container) => sum + (container.value || 0),
+      0
+    );
     const remainingVolume = order.value - existingVolume;
 
     if (volume > remainingVolume) {
       return NextResponse.json(
-        { error: `Объем контейнера (${volume}) превышает оставшийся объем заказа (${remainingVolume})` },
+        {
+          error: `Объем контейнера (${volume}) превышает оставшийся объем заказа (${remainingVolume})`,
+        },
         { status: 400 }
       );
     }
 
     // Начинаем транзакцию
     const transaction = db.transaction(() => {
-      // Создаем новый контейнер
-      const newContainerNumber = existingContainers.length + 1;
-      const newContainer = {
-        container: newContainerNumber,
-        value: volume,
-        description: description || `Контейнер ${newContainerNumber}`,
-      };
+      if (volume === order.value) {
+        // Полная загрузка - обновляем весь заказ
+        const newContainer = {
+          container: 1,
+          value: volume,
+          description: description || `Контейнер 1`,
+        };
 
-      // Добавляем новый контейнер к существующим
-      const updatedContainers = [...existingContainers, newContainer];
-      const totalContainerVolume = updatedContainers.reduce((sum, container) => sum + (container.value || 0), 0);
+        const updateOrder = db.prepare(`
+          UPDATE orders 
+          SET containers = 1, container_loads = ?, status = 'in_container'
+          WHERE id = ?
+        `);
+        updateOrder.run(JSON.stringify([newContainer]), order_id);
 
-      // Проверяем, нужно ли создать новый заказ с оставшимся объемом
-      const remainingAfterContainer = order.value - totalContainerVolume;
-      let newOrderId = null;
-
-      if (remainingAfterContainer > 0) {
-        // Создаем новый заказ с оставшимся объемом
-        const insertNewOrder = db.prepare(`
+        // Логируем активность
+        const insertLog = db.prepare(`
+          INSERT INTO activity_logs (user_id, action, entity_type, details)
+          VALUES (1, 'создание_контейнера_полная', 'order', ?)
+        `);
+        insertLog.run(
+          `Создан контейнер для всего объема заказа ${order.order_number}: ${volume} ${order.measurement}${description ? ` (${description})` : ''}`
+        );
+      } else {
+        // Частичная загрузка - разделяем заказ
+        const remainingVolume = order.value - volume;
+        const pricePerUnit = order.total_price / order.value;
+        
+        // Создаем новый заказ для контейнера
+        const containerOrderNumber = `${order.order_number}-C${Math.floor(Date.now() / 1000)}`;
+        const containerOrderPrice = volume * pricePerUnit;
+        
+        const insertContainerOrder = db.prepare(`
           INSERT INTO orders (
             order_number, supplier_id, item_id, date, description, measurement,
-            value, price_per_unit, total_price, status, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', datetime('now'))
+            value, price_per_unit, total_price, status, containers, 
+            container_loads, created_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'in_container', 1, ?, datetime('now'))
         `);
-
-        const newOrderNumber = `${order.order_number}-remaining`;
-        const newTotalPrice = remainingAfterContainer * (order.price_per_unit || 0);
-
-        const result = insertNewOrder.run(
-          newOrderNumber,
+        
+        const containerData = JSON.stringify([{
+          container: 1,
+          value: volume,
+          description: description || `Контейнер 1`,
+        }]);
+        
+        insertContainerOrder.run(
+          containerOrderNumber,
           order.supplier_id,
           order.item_id,
           order.date,
-          `${order.description || ''} (оставшийся объем)`.trim(),
+          `Контейнер из ${order.order_number}`,
           order.measurement,
-          remainingAfterContainer,
+          volume,
           order.price_per_unit,
-          newTotalPrice
+          containerOrderPrice,
+          containerData
         );
 
-        newOrderId = result.lastInsertRowid;
-
-        // Логируем создание нового заказа
-        const insertLogNewOrder = db.prepare(`
-          INSERT INTO activity_logs (user_id, action, entity_type, details)
-          VALUES (1, 'создание_заказа', 'order', ?)
+        // Обновляем исходный заказ (убираем загруженный объем)
+        const remainingPrice = remainingVolume * pricePerUnit;
+        const updateOriginalOrder = db.prepare(`
+          UPDATE orders 
+          SET value = ?, total_price = ?
+          WHERE id = ?
         `);
-        insertLogNewOrder.run(
-          `Создан новый заказ ${newOrderNumber} с оставшимся объемом ${remainingAfterContainer} ${order.measurement} от заказа ${order.order_number}`
+        updateOriginalOrder.run(remainingVolume, remainingPrice, order_id);
+
+        // Логируем активность
+        const insertLog = db.prepare(`
+          INSERT INTO activity_logs (user_id, action, entity_type, details)
+          VALUES (1, 'создание_контейнера_частичная', 'order', ?)
+        `);
+        insertLog.run(
+          `Создан контейнер для части заказа ${order.order_number}: ${volume} ${order.measurement} → новый заказ ${containerOrderNumber} (в контейнере). Остаток: ${remainingVolume} ${order.measurement}`
         );
       }
-
-      // Обновляем исходный заказ - устанавливаем объем равным объему в контейнерах
-      const updateOrder = db.prepare(`
-        UPDATE orders 
-        SET value = ?, total_price = ?, containers = ?, container_loads = ?, status = 'in_container'
-        WHERE id = ?
-      `);
-      
-      const containerTotalPrice = totalContainerVolume * (order.price_per_unit || 0);
-      updateOrder.run(
-        totalContainerVolume,
-        containerTotalPrice,
-        updatedContainers.length,
-        JSON.stringify(updatedContainers),
-        order_id
-      );
-
-      // Логируем создание контейнера
-      const insertLog = db.prepare(`
-        INSERT INTO activity_logs (user_id, action, entity_type, details)
-        VALUES (1, 'создание_контейнера', 'order', ?)
-      `);
-      insertLog.run(
-        `Создан контейнер ${newContainerNumber} объемом ${volume} ${order.measurement} для заказа ${order.order_number}${description ? `: ${description}` : ''}`
-      );
     });
 
     transaction();
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true,
-      message: "Контейнер создан успешно",
-      container: {
-        container: existingContainers.length + 1,
-        value: volume,
-        description: description || `Контейнер ${existingContainers.length + 1}`,
-      }
+      message: volume === order.value ? 
+        "Контейнер создан для всего заказа" : 
+        "Заказ разделен: создан контейнер и остался заказ для оставшегося объема",
+      split: volume < order.value,
+      remaining_volume: volume < order.value ? order.value - volume : 0
     });
   } catch (error) {
     console.error("Ошибка создания контейнера:", error);
