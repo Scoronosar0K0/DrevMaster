@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logActivity } from "@/lib/activity";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
+import { getCashBalance } from "@/lib/balance";
+import { formatMoney } from "@/lib/format";
 
 initDatabase();
+
+const toCents = (value: number) => Math.round(Number(value) * 100);
 
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const loanId = parseInt(params.id);
     const body = await request.json();
@@ -32,71 +41,89 @@ export async function POST(
       );
     }
 
-    // Если частичная оплата, проверяем сумму
+    // Считаем в центах, чтобы не оставались «хвосты» вроде $0.0000001
+    const loanCents = toCents(loan.amount);
+    let paymentCents = loanCents;
     if (isPartialPayment) {
-      if (!amount || amount <= 0) {
+      if (!(Number.isFinite(amount) && amount > 0)) {
         return NextResponse.json(
           { error: "Сумма частичной оплаты должна быть больше 0" },
           { status: 400 }
         );
       }
-
-      if (amount > loan.amount) {
+      paymentCents = toCents(amount);
+      if (paymentCents > loanCents) {
         return NextResponse.json(
           { error: "Сумма оплаты не может превышать размер займа" },
           { status: 400 }
         );
       }
     }
+    const payment = paymentCents / 100;
+    const isManagerDebt = loan.kind === "manager_debt";
 
-    // Начинаем транзакцию
-    const transaction = db.transaction(() => {
-      const paymentAmount = isPartialPayment ? amount : loan.amount;
-      
-      if (isPartialPayment && amount < loan.amount) {
+    // Возврат займа партнеру — деньги уходят из кассы, их должно хватать.
+    // Погашение долга менеджера — деньги поступают, проверка не нужна
+    if (!isManagerDebt) {
+      const balance = getCashBalance();
+      if (payment > balance + 1e-9) {
+        return NextResponse.json(
+          {
+            error: `Недостаточно средств! Необходимо: ${formatMoney(
+              payment
+            )}, Доступно: ${formatMoney(balance)}`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    db.transaction(() => {
+      const remainingCents = loanCents - paymentCents;
+
+      if (remainingCents > 0) {
         // Частичное погашение - уменьшаем сумму займа
-        const newAmount = loan.amount - amount;
-        const updateLoan = db.prepare(`
-          UPDATE loans SET amount = ? WHERE id = ?
-        `);
-        updateLoan.run(newAmount, loanId);
-
-        // Логируем частичное погашение
-        const insertLog = db.prepare(`
-          INSERT INTO activity_logs (user_id, action, entity_type, details)
-          VALUES (1, 'займ_частично_погашен', 'loan', ?)
-        `);
-        insertLog.run(
+        const newAmount = remainingCents / 100;
+        db.prepare("UPDATE loans SET amount = ? WHERE id = ?").run(
+          newAmount,
+          loanId
+        );
+        logActivity(
+          session.userId,
+          "займ_частично_погашен",
+          "loan",
           `Частично погашен займ ${
             loan.partner_name || `ID: ${loan.partner_id}`
-          }: оплачено $${amount}, остаток $${newAmount} (ID займа: ${loanId})`
+          }: оплачено $${payment}, остаток $${newAmount} (ID займа: ${loanId})`
         );
       } else {
         // Полное погашение - отмечаем займ как погашенный
-        const updateLoan = db.prepare(`
-          UPDATE loans SET is_paid = true WHERE id = ?
-        `);
-        updateLoan.run(loanId);
-
-        // Логируем полное погашение
-        const insertLog = db.prepare(`
-          INSERT INTO activity_logs (user_id, action, entity_type, details)
-          VALUES (1, 'займ_погашен', 'loan', ?)
-        `);
-        insertLog.run(
+        db.prepare("UPDATE loans SET is_paid = true WHERE id = ?").run(loanId);
+        logActivity(
+          session.userId,
+          "займ_погашен",
+          "loan",
           `Полностью погашен займ ${
             loan.partner_name || `ID: ${loan.partner_id}`
-          } на сумму $${loan.amount} (ID займа: ${loanId})`
+          } на сумму $${payment} (ID займа: ${loanId})`
         );
       }
 
-      // НЕ создаем expense при оплате займа, потому что:
-      // 1. Займ исключается из активных займов (is_paid = true)
-      // 2. Это уже уменьшает баланс в формуле: activeLoans + income - expenses
-      // 3. Создание expense приведет к двойному списанию
-    });
-
-    transaction();
+      // Займ партнера: расход не создаем — погашенный займ сам выходит из
+      // баланса (займы + поступления − расходы), иначе было бы двойное списание.
+      // Долг менеджера в баланс не входит, поэтому полученные деньги
+      // записываем как поступление (отрицательная сумма в expenses)
+      if (isManagerDebt) {
+        db.prepare(
+          `INSERT INTO expenses (amount, description, type, related_id)
+           VALUES (?, ?, 'other', ?)`
+        ).run(
+          -payment,
+          `Погашение долга менеджера ${loan.partner_name || ""} - $${payment}`.trim(),
+          loanId
+        );
+      }
+    })();
 
     return NextResponse.json({ success: true });
   } catch (error) {

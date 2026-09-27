@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logActivity } from "@/lib/activity";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
 const bcrypt = require("bcryptjs");
 
 initDatabase();
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const managers = db
       .prepare(
@@ -25,7 +30,7 @@ export async function GET() {
           SUM(l.amount) as total_debt
         FROM partners p
         JOIN loans l ON p.id = l.partner_id
-        WHERE l.is_paid = false
+        WHERE l.is_paid = false AND l.kind = 'manager_debt'
         GROUP BY p.user_id
       ) debt ON u.id = debt.user_id
       WHERE u.role = 'manager'
@@ -45,6 +50,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const body = await request.json();
     const { username, password, name, email, phone } = body;
@@ -81,11 +89,7 @@ export async function POST(request: NextRequest) {
       .run(username, hashedPassword, name, email || null, phone || null);
 
     // Логируем активность
-    const insertLog = db.prepare(`
-      INSERT INTO activity_logs (user_id, action, entity_type, details)
-      VALUES (1, 'создан', 'manager', ?)
-    `);
-    insertLog.run(`Создан менеджер: ${name} (${username})`);
+    logActivity(session.userId, "создан", "manager", `Создан менеджер: ${name} (${username})`);
 
     return NextResponse.json({
       success: true,

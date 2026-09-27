@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
 
 initDatabase();
@@ -7,6 +8,9 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const body = await request.json();
     const { name, contact_person, phone, email, address, description } = body;
@@ -56,8 +60,27 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const supplierId = parseInt(params.id);
+
+    // Заказы и долги ссылаются на поставщика — удалить его нельзя,
+    // иначе потеряется история закупок
+    const usage = db
+      .prepare(
+        `SELECT
+           (SELECT COUNT(*) FROM orders WHERE supplier_id = ?) +
+           (SELECT COUNT(*) FROM supplier_debts WHERE supplier_id = ?) as count`
+      )
+      .get(supplierId, supplierId) as { count: number };
+    if (usage.count > 0) {
+      return NextResponse.json(
+        { error: "Нельзя удалить поставщика: по нему есть заказы" },
+        { status: 400 }
+      );
+    }
 
     const deleteSupplier = db.prepare("DELETE FROM suppliers WHERE id = ?");
     const result = deleteSupplier.run(supplierId);

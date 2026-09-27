@@ -1,5 +1,15 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
+import Icon from "@/components/Icon";
+import { PageHeader } from "@/components/ui";
+import { formatDate } from "@/lib/format";
+import { notify, confirmAction } from "@/components/feedback";
+
+const SEARCH_PATH = "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z";
+const EDIT_PATH =
+  "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z";
+const TRASH_PATH =
+  "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16";
 
 interface Supplier {
   id: number;
@@ -53,6 +63,26 @@ export default function SuppliersPage() {
 
   const [newItemName, setNewItemName] = useState("");
   const [addingItem, setAddingItem] = useState(false);
+
+  // Защита от повторного нажатия: пока запрос выполняется, повторный вызов
+  // игнорируется (иначе двойной клик проводил бы оплату или продажу дважды)
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const guard =
+    <A extends unknown[]>(fn: (...args: A) => Promise<void>) =>
+    async (...args: A) => {
+      const event = args[0] as { preventDefault?: () => void } | undefined;
+      event?.preventDefault?.();
+      if (submittingRef.current) return;
+      submittingRef.current = true;
+      setSubmitting(true);
+      try {
+        await fn(...args);
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
+    };
 
   useEffect(() => {
     fetchSuppliers();
@@ -108,7 +138,7 @@ export default function SuppliersPage() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = guard(async (e: React.FormEvent) => {
     e.preventDefault();
 
     try {
@@ -129,16 +159,16 @@ export default function SuppliersPage() {
       if (response.ok) {
         fetchSuppliers();
         resetForm();
-        alert(editingSupplier ? "Поставщик обновлен" : "Поставщик создан");
+        notify.success(editingSupplier ? "Поставщик обновлен" : "Поставщик создан");
       } else {
         const error = await response.json();
-        alert(error.error || "Ошибка при сохранении");
+        notify.error(error.error || "Ошибка при сохранении");
       }
     } catch (error) {
       console.error("Ошибка:", error);
-      alert("Ошибка при сохранении");
+      notify.error("Ошибка при сохранении");
     }
-  };
+  });
 
   const resetForm = () => {
     setFormData({
@@ -166,8 +196,8 @@ export default function SuppliersPage() {
     setShowAddForm(true);
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("Вы уверены, что хотите удалить поставщика?")) return;
+  const handleDelete = guard(async (id: number) => {
+    if (!await confirmAction("Вы уверены, что хотите удалить поставщика?", { danger: true })) return;
 
     try {
       const response = await fetch(`/api/suppliers/${id}`, {
@@ -176,18 +206,18 @@ export default function SuppliersPage() {
 
       if (response.ok) {
         fetchSuppliers();
-        alert("Поставщик удален");
+        notify.success("Поставщик удален");
       } else {
         const error = await response.json();
-        alert(error.error || "Ошибка при удалении");
+        notify.error(error.error || "Ошибка при удалении");
       }
     } catch (error) {
       console.error("Ошибка:", error);
-      alert("Ошибка при удалении");
+      notify.error("Ошибка при удалении");
     }
-  };
+  });
 
-  const handleAddItem = async () => {
+  const handleAddItem = guard(async () => {
     if (!newItemName.trim() || !selectedSupplier) return;
 
     setAddingItem(true);
@@ -206,24 +236,24 @@ export default function SuppliersPage() {
       if (response.ok) {
         setNewItemName("");
         fetchSupplierItems(selectedSupplier.id);
-        alert("Товар добавлен");
+        notify.success("Товар добавлен");
       } else {
         const error = await response.json();
-        alert(error.error || "Ошибка при добавлении товара");
+        notify.error(error.error || "Ошибка при добавлении товара");
       }
     } catch (error) {
       console.error("Ошибка:", error);
-      alert("Ошибка при добавлении товара");
+      notify.error("Ошибка при добавлении товара");
     } finally {
       setAddingItem(false);
     }
-  };
+  });
 
-  const handleDeleteItem = async (itemId: number) => {
-    if (!confirm("Удалить товар?")) return;
+  const handleDeleteItem = guard(async (itemId: number) => {
+    if (!await confirmAction("Удалить товар?", { danger: true })) return;
 
     try {
-      const response = await fetch(`/api/supplier-items/${itemId}`, {
+      const response = await fetch(`/api/suppliers/items/${itemId}`, {
         method: "DELETE",
       });
 
@@ -231,15 +261,16 @@ export default function SuppliersPage() {
         if (selectedSupplier) {
           fetchSupplierItems(selectedSupplier.id);
         }
-        alert("Товар удален");
+        notify.success("Товар удален");
       } else {
-        alert("Ошибка при удалении товара");
+        const data = await response.json().catch(() => ({}));
+        notify.error(data.error || "Ошибка при удалении товара");
       }
     } catch (error) {
       console.error("Ошибка:", error);
-      alert("Ошибка при удалении товара");
+      notify.error("Ошибка при удалении товара");
     }
-  };
+  });
 
   const openItemsModal = async (supplier: Supplier) => {
     setSelectedSupplier(supplier);
@@ -260,323 +291,235 @@ export default function SuppliersPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Загрузка поставщиков...</p>
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <div className="flex items-center justify-center py-24 text-ink-500">
+          <span className="loading-spinner mr-3 text-brand-600" />
+          <span className="text-sm">Загрузка поставщиков...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {/* Заголовок */}
-        <div className="mb-6 sm:mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
-                🏭 Поставщики
-              </h1>
-              <p className="text-sm sm:text-base text-gray-600">
-                Управление поставщиками и их товарами
-              </p>
-            </div>
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      <PageHeader
+        title="Поставщики"
+        description="Управление поставщиками и их товарами"
+        actions={
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="btn btn-primary"
+          >
+            <Icon name="plus" className="h-4 w-4" />
+            Добавить поставщика
+          </button>
+        }
+      />
+
+      {/* Поиск */}
+      <div className="relative mb-6 max-w-md">
+        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+          <svg
+            className="h-4 w-4 text-ink-400"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d={SEARCH_PATH}
+            />
+          </svg>
+        </div>
+        <input
+          type="text"
+          placeholder="Поиск поставщиков..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="input-field pl-9"
+        />
+      </div>
+
+      {/* Список поставщиков */}
+      {filteredSuppliers.length === 0 ? (
+        <div className="card px-6 py-16 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-ink-100 text-ink-500">
+            <Icon name="building" className="h-6 w-6" />
+          </div>
+          <h3 className="text-base font-semibold text-ink-900">
+            {searchTerm ? "Поставщики не найдены" : "Нет поставщиков"}
+          </h3>
+          <p className="mt-1 text-sm text-ink-500">
+            {searchTerm
+              ? "Попробуйте изменить поисковый запрос"
+              : "Добавьте первого поставщика для начала работы"}
+          </p>
+          {!searchTerm && (
             <button
               onClick={() => setShowAddForm(true)}
-              className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white px-6 py-3 rounded-lg font-medium transition-all duration-200 transform hover:-translate-y-1 shadow-lg hover:shadow-xl mt-4 sm:mt-0"
+              className="btn btn-primary mt-6"
             >
-              ➕ Добавить поставщика
+              <Icon name="plus" className="h-4 w-4" />
+              Добавить первого поставщика
             </button>
-          </div>
-
-          {/* Поиск */}
-          <div className="relative max-w-md">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <svg
-                className="h-5 w-5 text-gray-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
-            </div>
-            <input
-              type="text"
-              placeholder="Поиск поставщиков..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-green-500 focus:border-green-500 transition-colors"
-            />
-          </div>
+          )}
         </div>
-
-        {/* Список поставщиков */}
-        {filteredSuppliers.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="text-6xl sm:text-8xl mb-4">🏭</div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              {searchTerm ? "Поставщики не найдены" : "Нет поставщиков"}
-            </h3>
-            <p className="text-gray-500 mb-6">
-              {searchTerm
-                ? "Попробуйте изменить поисковый запрос"
-                : "Добавьте первого поставщика для начала работы"}
-            </p>
-            {!searchTerm && (
-              <button
-                onClick={() => setShowAddForm(true)}
-                className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-medium transition-colors"
-              >
-                Добавить первого поставщика
-              </button>
-            )}
+      ) : (
+        <div className="card overflow-hidden">
+          <div className="hidden grid-cols-12 gap-4 border-b border-ink-100 bg-ink-50 px-5 py-3 text-xs font-medium uppercase tracking-wide text-ink-500 lg:grid">
+            <div className="col-span-3">Поставщик</div>
+            <div className="col-span-3">Контакты</div>
+            <div className="col-span-4">Долг по товарам</div>
+            <div className="col-span-2 text-right">Действия</div>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredSuppliers.map((supplier, index) => (
-              <div
+          <ul className="divide-y divide-ink-100">
+            {filteredSuppliers.map((supplier) => (
+              <li
                 key={supplier.id}
-                className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1"
-                style={{
-                  animationDelay: `${index * 100}ms`,
-                  animation: "slideInUp 0.6s ease-out forwards",
-                }}
+                className="grid grid-cols-1 gap-3 px-5 py-4 transition-colors hover:bg-ink-50 lg:grid-cols-12 lg:items-start lg:gap-4"
               >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center">
-                    <div className="w-12 h-12 bg-gradient-to-r from-green-500 to-emerald-600 rounded-full flex items-center justify-center text-white font-bold text-lg mr-3">
-                      {supplier.name[0].toUpperCase()}
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">
-                        {supplier.name}
-                      </h3>
-                      {supplier.contact_person && (
-                        <p className="text-sm text-gray-500">
-                          {supplier.contact_person}
-                        </p>
-                      )}
-                    </div>
+                <div className="flex min-w-0 items-center gap-3 lg:col-span-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ink-100 text-sm font-semibold text-ink-700">
+                    {supplier.name[0].toUpperCase()}
                   </div>
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={() => openItemsModal(supplier)}
-                      className="text-purple-600 hover:text-purple-800 p-1"
-                      title="Товары"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-                        />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => handleEdit(supplier)}
-                      className="text-blue-600 hover:text-blue-800 p-1"
-                      title="Редактировать"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                        />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => handleDelete(supplier.id)}
-                      className="text-red-600 hover:text-red-800 p-1"
-                      title="Удалить"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
-                    </button>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-ink-900">
+                      {supplier.name}
+                    </div>
+                    {supplier.contact_person && (
+                      <div className="truncate text-xs text-ink-500">
+                        {supplier.contact_person}
+                      </div>
+                    )}
+                    <div className="text-xs text-ink-400">
+                      Добавлен {formatDate(supplier.created_at)}
+                    </div>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  {/* Долг поставщика по товарам */}
-                  {supplier.debt_items && supplier.debt_items.length > 0 && (
-                    <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                      <div className="flex items-center text-sm text-red-700 mb-2">
-                        <svg
-                          className="w-4 h-4 mr-2"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-                          />
-                        </svg>
-                        <span className="font-medium">
-                          Долг по товарам ({supplier.total_items_count} видов)
-                        </span>
+                <div className="min-w-0 space-y-0.5 text-sm text-ink-500 lg:col-span-3">
+                  <div className="truncate">{supplier.phone}</div>
+                  {supplier.email && (
+                    <div className="truncate">{supplier.email}</div>
+                  )}
+                  {supplier.address && (
+                    <div className="truncate">{supplier.address}</div>
+                  )}
+                  {supplier.description && (
+                    <div className="line-clamp-1 text-xs text-ink-400">
+                      {supplier.description}
+                    </div>
+                  )}
+                </div>
+
+                {/* Долг поставщика по товарам */}
+                <div className="min-w-0 lg:col-span-4">
+                  {supplier.debt_items && supplier.debt_items.length > 0 ? (
+                    <div>
+                      <div className="mb-1.5 text-xs font-medium text-red-700">
+                        <span className="lg:hidden">Долг по товарам: </span>
+                        {supplier.total_items_count} видов
                       </div>
-                      <div className="space-y-1">
+                      <div className="flex flex-wrap gap-1.5">
                         {supplier.debt_items.map((item, idx) => (
-                          <div
+                          <span
                             key={idx}
-                            className="text-xs text-red-600 bg-red-100 px-2 py-1 rounded"
+                            className="inline-flex items-center rounded-md bg-red-50 px-2 py-0.5 text-xs text-red-700"
                           >
                             <span className="font-medium">
                               {item.item_name}:
-                            </span>{" "}
+                            </span>
+                            &nbsp;
                             {item.total_debt_value.toFixed(2)}{" "}
                             {item.measurement}
-                          </div>
+                          </span>
                         ))}
                       </div>
                     </div>
+                  ) : (
+                    <span className="text-sm text-ink-400">—</span>
                   )}
-
-                  <div className="flex items-center text-sm text-gray-600">
-                    <svg
-                      className="w-4 h-4 mr-2"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"
-                      />
-                    </svg>
-                    {supplier.phone}
-                  </div>
-                  {supplier.email && (
-                    <div className="flex items-center text-sm text-gray-600">
-                      <svg
-                        className="w-4 h-4 mr-2"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                        />
-                      </svg>
-                      {supplier.email}
-                    </div>
-                  )}
-                  {supplier.address && (
-                    <div className="flex items-center text-sm text-gray-600">
-                      <svg
-                        className="w-4 h-4 mr-2"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                        />
-                      </svg>
-                      {supplier.address}
-                    </div>
-                  )}
-                  <div className="flex items-center text-sm text-gray-500">
-                    <svg
-                      className="w-4 h-4 mr-2"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M8 7V3a1 1 0 011-1h6a1 1 0 011 1v4h-8zM3 9a1 1 0 011-1h16a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V9z"
-                      />
-                    </svg>
-                    {new Date(supplier.created_at).toLocaleDateString()}
-                  </div>
                 </div>
 
-                {supplier.description && (
-                  <div className="mt-3 pt-3 border-t border-gray-100">
-                    <p className="text-sm text-gray-600 line-clamp-2">
-                      {supplier.description}
-                    </p>
-                  </div>
-                )}
-              </div>
+                <div className="flex items-center gap-1 lg:col-span-2 lg:justify-end">
+                  <button
+                    onClick={() => openItemsModal(supplier)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50"
+                    title="Товары"
+                  >
+                    <Icon name="cube" className="h-4 w-4 text-ink-400" />
+                    Товары
+                  </button>
+                  <button
+                    onClick={() => handleEdit(supplier)}
+                    className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-brand-50 hover:text-brand-600"
+                    title="Редактировать"
+                  >
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.8}
+                        d={EDIT_PATH}
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    disabled={submitting}
+                    onClick={() => handleDelete(supplier.id)}
+                    className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                    title="Удалить"
+                  >
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.8}
+                        d={TRASH_PATH}
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </li>
             ))}
-          </div>
-        )}
-      </div>
+          </ul>
+        </div>
+      )}
 
       {/* Модальное окно формы поставщика */}
       {showAddForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-ink-200 bg-white shadow-xl">
             <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-gray-900">
+              <div className="mb-6 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-ink-900">
                   {editingSupplier
                     ? "Редактировать поставщика"
                     : "Добавить поставщика"}
                 </h3>
                 <button
                   onClick={resetForm}
-                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                  className="rounded-lg p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-600"
                 >
-                  ×
+                  <Icon name="close" className="h-5 w-5" />
                 </button>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Название *
                   </label>
                   <input
@@ -586,13 +529,13 @@ export default function SuppliersPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, name: e.target.value })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="Название поставщика"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Контактное лицо
                   </label>
                   <input
@@ -604,13 +547,13 @@ export default function SuppliersPage() {
                         contact_person: e.target.value,
                       })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="Имя контактного лица"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Телефон *
                   </label>
                   <input
@@ -620,13 +563,13 @@ export default function SuppliersPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, phone: e.target.value })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="+7 (999) 123-45-67"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Email
                   </label>
                   <input
@@ -635,13 +578,13 @@ export default function SuppliersPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, email: e.target.value })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="email@example.com"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Адрес
                   </label>
                   <input
@@ -650,13 +593,13 @@ export default function SuppliersPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, address: e.target.value })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="Адрес поставщика"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Описание
                   </label>
                   <textarea
@@ -664,24 +607,21 @@ export default function SuppliersPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, description: e.target.value })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className="input-field"
                     rows={3}
                     placeholder="Дополнительная информация..."
                   />
                 </div>
 
-                <div className="flex space-x-3 pt-4">
+                <div className="flex gap-3 pt-4">
                   <button
                     type="button"
                     onClick={resetForm}
-                    className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="btn btn-secondary flex-1"
                   >
                     Отмена
                   </button>
-                  <button
-                    type="submit"
-                    className="flex-1 px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
-                  >
+                  <button disabled={submitting} type="submit" className="btn btn-primary flex-1">
                     {editingSupplier ? "Обновить" : "Создать"}
                   </button>
                 </div>
@@ -693,15 +633,17 @@ export default function SuppliersPage() {
 
       {/* Модальное окно товаров */}
       {showItemsModal && selectedSupplier && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-ink-200 bg-white shadow-xl">
             <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
+              <div className="mb-6 flex items-start justify-between">
                 <div>
-                  <h3 className="text-xl font-bold text-gray-900">
+                  <h3 className="text-lg font-semibold text-ink-900">
                     Товары поставщика
                   </h3>
-                  <p className="text-gray-600">{selectedSupplier.name}</p>
+                  <p className="text-sm text-ink-500">
+                    {selectedSupplier.name}
+                  </p>
                 </div>
                 <button
                   onClick={() => {
@@ -709,27 +651,27 @@ export default function SuppliersPage() {
                     setSelectedSupplier(null);
                     setSupplierItems([]);
                   }}
-                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                  className="rounded-lg p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-600"
                 >
-                  ×
+                  <Icon name="close" className="h-5 w-5" />
                 </button>
               </div>
 
               {/* Добавление товара */}
-              <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-                <div className="flex space-x-3">
+              <div className="mb-6 rounded-lg border border-ink-200 bg-ink-50 p-4">
+                <div className="flex gap-3">
                   <input
                     type="text"
                     value={newItemName}
                     onChange={(e) => setNewItemName(e.target.value)}
-                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className="input-field flex-1"
                     placeholder="Название нового товара"
                     onKeyPress={(e) => e.key === "Enter" && handleAddItem()}
                   />
                   <button
                     onClick={handleAddItem}
-                    disabled={!newItemName.trim() || addingItem}
-                    className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    disabled={submitting || (!newItemName.trim() || addingItem)}
+                    className="btn btn-primary shrink-0"
                   >
                     {addingItem ? "Добавление..." : "Добавить"}
                   </button>
@@ -738,33 +680,37 @@ export default function SuppliersPage() {
 
               {/* Список товаров */}
               {supplierItems.length === 0 ? (
-                <div className="text-center py-8">
-                  <div className="text-4xl mb-4">📦</div>
-                  <p className="text-gray-500">У поставщика пока нет товаров</p>
+                <div className="py-8 text-center">
+                  <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-ink-100 text-ink-500">
+                    <Icon name="cube" className="h-5 w-5" />
+                  </div>
+                  <p className="text-sm text-ink-500">
+                    У поставщика пока нет товаров
+                  </p>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <ul className="divide-y divide-ink-100 rounded-lg border border-ink-200">
                   {supplierItems.map((item) => (
-                    <div
+                    <li
                       key={item.id}
-                      className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                      className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-ink-50"
                     >
                       <div>
-                        <h4 className="font-medium text-gray-900">
+                        <h4 className="text-sm font-medium text-ink-900">
                           {item.name}
                         </h4>
-                        <p className="text-sm text-gray-500">
-                          Добавлен:{" "}
-                          {new Date(item.created_at).toLocaleDateString()}
+                        <p className="text-xs text-ink-500">
+                          Добавлен: {formatDate(item.created_at)}
                         </p>
                       </div>
                       <button
+                        disabled={submitting}
                         onClick={() => handleDeleteItem(item.id)}
-                        className="text-red-600 hover:text-red-800 p-1"
+                        className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-red-50 hover:text-red-600"
                         title="Удалить товар"
                       >
                         <svg
-                          className="w-5 h-5"
+                          className="h-4 w-4"
                           fill="none"
                           stroke="currentColor"
                           viewBox="0 0 24 24"
@@ -772,14 +718,14 @@ export default function SuppliersPage() {
                           <path
                             strokeLinecap="round"
                             strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                            strokeWidth={1.8}
+                            d={TRASH_PATH}
                           />
                         </svg>
                       </button>
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ul>
               )}
             </div>
           </div>

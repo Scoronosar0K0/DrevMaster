@@ -1,5 +1,15 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
+import Icon from "@/components/Icon";
+import { PageHeader } from "@/components/ui";
+import { formatDate } from "@/lib/format";
+import { notify, confirmAction } from "@/components/feedback";
+
+const SEARCH_PATH = "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z";
+const EDIT_PATH =
+  "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z";
+const TRASH_PATH =
+  "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16";
 
 interface Partner {
   id: number;
@@ -28,6 +38,26 @@ export default function PartnersPage() {
     password: "",
   });
 
+  // Защита от повторного нажатия: пока запрос выполняется, повторный вызов
+  // игнорируется (иначе двойной клик проводил бы оплату или продажу дважды)
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const guard =
+    <A extends unknown[]>(fn: (...args: A) => Promise<void>) =>
+    async (...args: A) => {
+      const event = args[0] as { preventDefault?: () => void } | undefined;
+      event?.preventDefault?.();
+      if (submittingRef.current) return;
+      submittingRef.current = true;
+      setSubmitting(true);
+      try {
+        await fn(...args);
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
+    };
+
   useEffect(() => {
     fetchPartners();
   }, []);
@@ -44,7 +74,7 @@ export default function PartnersPage() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = guard(async (e: React.FormEvent) => {
     e.preventDefault();
 
     try {
@@ -65,16 +95,16 @@ export default function PartnersPage() {
       if (response.ok) {
         fetchPartners();
         resetForm();
-        alert(editingPartner ? "Партнер обновлен" : "Партнер создан");
+        notify.success(editingPartner ? "Партнер обновлен" : "Партнер создан");
       } else {
         const error = await response.json();
-        alert(error.error || "Ошибка при сохранении");
+        notify.error(error.error || "Ошибка при сохранении");
       }
     } catch (error) {
       console.error("Ошибка:", error);
-      alert("Ошибка при сохранении");
+      notify.error("Ошибка при сохранении");
     }
-  };
+  });
 
   const resetForm = () => {
     setFormData({
@@ -102,8 +132,8 @@ export default function PartnersPage() {
     setShowAddForm(true);
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("Вы уверены, что хотите удалить партнера?")) return;
+  const handleDelete = guard(async (id: number) => {
+    if (!await confirmAction("Вы уверены, что хотите удалить партнера?", { danger: true })) return;
 
     try {
       const response = await fetch(`/api/partners/${id}`, {
@@ -112,16 +142,16 @@ export default function PartnersPage() {
 
       if (response.ok) {
         fetchPartners();
-        alert("Партнер удален");
+        notify.success("Партнер удален");
       } else {
         const error = await response.json();
-        alert(error.error || "Ошибка при удалении");
+        notify.error(error.error || "Ошибка при удалении");
       }
     } catch (error) {
       console.error("Ошибка:", error);
-      alert("Ошибка при удалении");
+      notify.error("Ошибка при удалении");
     }
-  };
+  });
 
   const filteredPartners = partners.filter(
     (partner) =>
@@ -133,217 +163,145 @@ export default function PartnersPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Загрузка партнеров...</p>
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <div className="flex items-center justify-center py-24 text-ink-500">
+          <span className="loading-spinner mr-3 text-brand-600" />
+          <span className="text-sm">Загрузка партнеров...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {/* Заголовок */}
-        <div className="mb-6 sm:mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
-                🤝 Партнеры
-              </h1>
-              <p className="text-sm sm:text-base text-gray-600">
-                Управление деловыми партнерами
-              </p>
-            </div>
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      <PageHeader
+        title="Партнеры"
+        description="Управление деловыми партнерами"
+        actions={
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="btn btn-primary"
+          >
+            <Icon name="plus" className="h-4 w-4" />
+            Добавить партнера
+          </button>
+        }
+      />
+
+      {/* Поиск */}
+      <div className="relative mb-6 max-w-md">
+        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+          <svg
+            className="h-4 w-4 text-ink-400"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d={SEARCH_PATH}
+            />
+          </svg>
+        </div>
+        <input
+          type="text"
+          placeholder="Поиск партнеров..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="input-field pl-9"
+        />
+      </div>
+
+      {/* Список партнеров */}
+      {filteredPartners.length === 0 ? (
+        <div className="card px-6 py-16 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-ink-100 text-ink-500">
+            <Icon name="users" className="h-6 w-6" />
+          </div>
+          <h3 className="text-base font-semibold text-ink-900">
+            {searchTerm ? "Партнеры не найдены" : "Нет партнеров"}
+          </h3>
+          <p className="mt-1 text-sm text-ink-500">
+            {searchTerm
+              ? "Попробуйте изменить поисковый запрос"
+              : "Добавьте первого партнера для начала работы"}
+          </p>
+          {!searchTerm && (
             <button
               onClick={() => setShowAddForm(true)}
-              className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white px-6 py-3 rounded-lg font-medium transition-all duration-200 transform hover:-translate-y-1 shadow-lg hover:shadow-xl mt-4 sm:mt-0"
+              className="btn btn-primary mt-6"
             >
-              ➕ Добавить партнера
+              <Icon name="plus" className="h-4 w-4" />
+              Добавить первого партнера
             </button>
-          </div>
-
-          {/* Поиск */}
-          <div className="relative max-w-md">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <svg
-                className="h-5 w-5 text-gray-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
-            </div>
-            <input
-              type="text"
-              placeholder="Поиск партнеров..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-            />
-          </div>
+          )}
         </div>
-
-        {/* Список партнеров */}
-        {filteredPartners.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="text-6xl sm:text-8xl mb-4">🤝</div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              {searchTerm ? "Партнеры не найдены" : "Нет партнеров"}
-            </h3>
-            <p className="text-gray-500 mb-6">
-              {searchTerm
-                ? "Попробуйте изменить поисковый запрос"
-                : "Добавьте первого партнера для начала работы"}
-            </p>
-            {!searchTerm && (
-              <button
-                onClick={() => setShowAddForm(true)}
-                className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium transition-colors"
-              >
-                Добавить первого партнера
-              </button>
-            )}
+      ) : (
+        <div className="card overflow-hidden">
+          <div className="hidden grid-cols-12 gap-4 border-b border-ink-100 bg-ink-50 px-5 py-3 text-xs font-medium uppercase tracking-wide text-ink-500 md:grid">
+            <div className="col-span-4">Партнер</div>
+            <div className="col-span-4">Контакты</div>
+            <div className="col-span-2">Добавлен</div>
+            <div className="col-span-2 text-right">Действия</div>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredPartners.map((partner, index) => (
-              <div
+          <ul className="divide-y divide-ink-100">
+            {filteredPartners.map((partner) => (
+              <li
                 key={partner.id}
-                className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1"
-                style={{
-                  animationDelay: `${index * 100}ms`,
-                  animation: "slideInUp 0.6s ease-out forwards",
-                }}
+                className="grid grid-cols-1 gap-3 px-5 py-4 transition-colors hover:bg-ink-50 md:grid-cols-12 md:items-center md:gap-4"
               >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center">
-                    <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-lg mr-3">
-                      {partner.name[0].toUpperCase()}
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">
-                        {partner.name}
-                      </h3>
-                      <p className="text-sm text-gray-500">
-                        @{partner.username}
-                      </p>
-                    </div>
+                <div className="flex min-w-0 items-center gap-3 md:col-span-4">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ink-100 text-sm font-semibold text-ink-700">
+                    {partner.name[0].toUpperCase()}
                   </div>
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={() => setSelectedPartner(partner)}
-                      className="text-blue-600 hover:text-blue-800 p-1"
-                      title="Подробности"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                        />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => handleEdit(partner)}
-                      className="text-green-600 hover:text-green-800 p-1"
-                      title="Редактировать"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                        />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => handleDelete(partner.id)}
-                      className="text-red-600 hover:text-red-800 p-1"
-                      title="Удалить"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
-                    </button>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-ink-900">
+                      {partner.name}
+                    </div>
+                    <div className="truncate text-xs text-ink-500">
+                      @{partner.username}
+                    </div>
                   </div>
                 </div>
 
-                <div className="space-y-2">
+                <div className="min-w-0 space-y-0.5 text-sm text-ink-500 md:col-span-4">
                   {partner.email && (
-                    <div className="flex items-center text-sm text-gray-600">
-                      <svg
-                        className="w-4 h-4 mr-2"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                        />
-                      </svg>
-                      {partner.email}
-                    </div>
+                    <div className="truncate">{partner.email}</div>
                   )}
                   {partner.phone && (
-                    <div className="flex items-center text-sm text-gray-600">
-                      <svg
-                        className="w-4 h-4 mr-2"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"
-                        />
-                      </svg>
-                      {partner.phone}
+                    <div className="truncate">{partner.phone}</div>
+                  )}
+                  {!partner.email && !partner.phone && (
+                    <div className="text-ink-400">—</div>
+                  )}
+                  {partner.description && (
+                    <div className="line-clamp-1 text-xs text-ink-400">
+                      {partner.description}
                     </div>
                   )}
-                  <div className="flex items-center text-sm text-gray-500">
+                </div>
+
+                <div className="text-sm text-ink-500 md:col-span-2">
+                  {formatDate(partner.created_at)}
+                </div>
+
+                <div className="flex items-center gap-1 md:col-span-2 md:justify-end">
+                  <button
+                    onClick={() => setSelectedPartner(partner)}
+                    className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700"
+                    title="Подробности"
+                  >
+                    <Icon name="eye" className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => handleEdit(partner)}
+                    className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-brand-50 hover:text-brand-600"
+                    title="Редактировать"
+                  >
                     <svg
-                      className="w-4 h-4 mr-2"
+                      className="h-4 w-4"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -351,49 +309,60 @@ export default function PartnersPage() {
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M8 7V3a1 1 0 011-1h6a1 1 0 011 1v4h-8zM3 9a1 1 0 011-1h16a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V9z"
+                        strokeWidth={1.8}
+                        d={EDIT_PATH}
                       />
                     </svg>
-                    {new Date(partner.created_at).toLocaleDateString()}
-                  </div>
+                  </button>
+                  <button
+                    disabled={submitting}
+                    onClick={() => handleDelete(partner.id)}
+                    className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                    title="Удалить"
+                  >
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.8}
+                        d={TRASH_PATH}
+                      />
+                    </svg>
+                  </button>
                 </div>
-
-                {partner.description && (
-                  <div className="mt-3 pt-3 border-t border-gray-100">
-                    <p className="text-sm text-gray-600 line-clamp-2">
-                      {partner.description}
-                    </p>
-                  </div>
-                )}
-              </div>
+              </li>
             ))}
-          </div>
-        )}
-      </div>
+          </ul>
+        </div>
+      )}
 
       {/* Модальное окно формы */}
       {showAddForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-ink-200 bg-white shadow-xl">
             <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-gray-900">
+              <div className="mb-6 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-ink-900">
                   {editingPartner
                     ? "Редактировать партнера"
                     : "Добавить партнера"}
                 </h3>
                 <button
                   onClick={resetForm}
-                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                  className="rounded-lg p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-600"
                 >
-                  ×
+                  <Icon name="close" className="h-5 w-5" />
                 </button>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Имя *
                   </label>
                   <input
@@ -403,13 +372,13 @@ export default function PartnersPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, name: e.target.value })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="Имя партнера"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Логин *
                   </label>
                   <input
@@ -419,14 +388,14 @@ export default function PartnersPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, username: e.target.value })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="Логин"
                   />
                 </div>
 
                 {!editingPartner && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-1.5 block text-sm font-medium text-ink-700">
                       Пароль *
                     </label>
                     <input
@@ -436,14 +405,14 @@ export default function PartnersPage() {
                       onChange={(e) =>
                         setFormData({ ...formData, password: e.target.value })
                       }
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="input-field"
                       placeholder="Пароль"
                     />
                   </div>
                 )}
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Email
                   </label>
                   <input
@@ -452,13 +421,13 @@ export default function PartnersPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, email: e.target.value })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="email@example.com"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Телефон
                   </label>
                   <input
@@ -467,13 +436,13 @@ export default function PartnersPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, phone: e.target.value })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="+7 (999) 123-45-67"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Описание
                   </label>
                   <textarea
@@ -481,24 +450,21 @@ export default function PartnersPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, description: e.target.value })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="input-field"
                     rows={3}
                     placeholder="Дополнительная информация..."
                   />
                 </div>
 
-                <div className="flex space-x-3 pt-4">
+                <div className="flex gap-3 pt-4">
                   <button
                     type="button"
                     onClick={resetForm}
-                    className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="btn btn-secondary flex-1"
                   >
                     Отмена
                   </button>
-                  <button
-                    type="submit"
-                    className="flex-1 px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-                  >
+                  <button disabled={submitting} type="submit" className="btn btn-primary flex-1">
                     {editingPartner ? "Обновить" : "Создать"}
                   </button>
                 </div>
@@ -510,119 +476,84 @@ export default function PartnersPage() {
 
       {/* Модальное окно просмотра */}
       {selectedPartner && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl w-full max-w-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4">
+          <div className="w-full max-w-md rounded-xl border border-ink-200 bg-white shadow-xl">
             <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-gray-900">
+              <div className="mb-6 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-ink-900">
                   Информация о партнере
                 </h3>
                 <button
                   onClick={() => setSelectedPartner(null)}
-                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                  className="rounded-lg p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-600"
                 >
-                  ×
+                  <Icon name="close" className="h-5 w-5" />
                 </button>
               </div>
 
-              <div className="text-center mb-6">
-                <div className="w-20 h-20 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-2xl mx-auto mb-4">
+              <div className="mb-6 flex items-center gap-4">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xl font-semibold text-ink-700">
                   {selectedPartner.name[0].toUpperCase()}
                 </div>
-                <h4 className="text-xl font-bold text-gray-900">
-                  {selectedPartner.name}
-                </h4>
-                <p className="text-gray-500">@{selectedPartner.username}</p>
+                <div className="min-w-0">
+                  <h4 className="truncate text-base font-semibold text-ink-900">
+                    {selectedPartner.name}
+                  </h4>
+                  <p className="text-sm text-ink-500">
+                    @{selectedPartner.username}
+                  </p>
+                </div>
               </div>
 
-              <div className="space-y-4">
+              <dl className="divide-y divide-ink-100 rounded-lg border border-ink-200 text-sm">
                 {selectedPartner.email && (
-                  <div className="flex items-center">
-                    <svg
-                      className="w-5 h-5 text-gray-400 mr-3"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                      />
-                    </svg>
-                    <span className="text-gray-700">
+                  <div className="flex justify-between gap-4 px-4 py-2.5">
+                    <dt className="text-ink-500">Email</dt>
+                    <dd className="truncate text-ink-900">
                       {selectedPartner.email}
-                    </span>
+                    </dd>
                   </div>
                 )}
 
                 {selectedPartner.phone && (
-                  <div className="flex items-center">
-                    <svg
-                      className="w-5 h-5 text-gray-400 mr-3"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"
-                      />
-                    </svg>
-                    <span className="text-gray-700">
-                      {selectedPartner.phone}
-                    </span>
+                  <div className="flex justify-between gap-4 px-4 py-2.5">
+                    <dt className="text-ink-500">Телефон</dt>
+                    <dd className="text-ink-900">{selectedPartner.phone}</dd>
                   </div>
                 )}
 
-                <div className="flex items-center">
-                  <svg
-                    className="w-5 h-5 text-gray-400 mr-3"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M8 7V3a1 1 0 011-1h6a1 1 0 011 1v4h-8zM3 9a1 1 0 011-1h16a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V9z"
-                    />
-                  </svg>
-                  <span className="text-gray-700">
-                    Создан:{" "}
-                    {new Date(selectedPartner.created_at).toLocaleDateString()}
-                  </span>
+                <div className="flex justify-between gap-4 px-4 py-2.5">
+                  <dt className="text-ink-500">Создан</dt>
+                  <dd className="text-ink-900">
+                    {formatDate(selectedPartner.created_at)}
+                  </dd>
                 </div>
+              </dl>
 
-                {selectedPartner.description && (
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <h5 className="font-medium text-gray-900 mb-2">
-                      Описание:
-                    </h5>
-                    <p className="text-gray-600">
-                      {selectedPartner.description}
-                    </p>
-                  </div>
-                )}
-              </div>
+              {selectedPartner.description && (
+                <div className="mt-4">
+                  <h5 className="mb-1 text-sm font-medium text-ink-700">
+                    Описание
+                  </h5>
+                  <p className="text-sm text-ink-600">
+                    {selectedPartner.description}
+                  </p>
+                </div>
+              )}
 
-              <div className="flex space-x-3 mt-6">
+              <div className="mt-6 flex gap-3">
                 <button
                   onClick={() => {
                     setSelectedPartner(null);
                     handleEdit(selectedPartner);
                   }}
-                  className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                  className="btn btn-primary flex-1"
                 >
                   Редактировать
                 </button>
                 <button
                   onClick={() => setSelectedPartner(null)}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  className="btn btn-secondary flex-1"
                 >
                   Закрыть
                 </button>

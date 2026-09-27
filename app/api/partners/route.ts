@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
 const bcrypt = require("bcryptjs");
 
 initDatabase();
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const partners = db
       .prepare(
         `
       SELECT 
         p.id,
+        p.user_id,
         u.name,
         u.username,
         u.email,
@@ -19,7 +24,7 @@ export async function GET() {
         p.created_at
       FROM partners p
       JOIN users u ON p.user_id = u.id
-      WHERE u.is_active = true AND u.role != 'manager'
+      WHERE u.is_active = true AND u.role != 'manager' AND p.id != 0
       ORDER BY p.created_at DESC
     `
       )
@@ -36,6 +41,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const body = await request.json();
     const { name, username, email, phone, description, password } = body;

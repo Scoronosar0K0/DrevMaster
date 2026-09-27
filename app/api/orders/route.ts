@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logActivity } from "@/lib/activity";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
+import { getCashBalance } from "@/lib/balance";
 
 initDatabase();
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const orders = db
       .prepare(
@@ -31,6 +37,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const body = await request.json();
     const {
@@ -62,6 +71,17 @@ export async function POST(request: NextRequest) {
     ) {
       return NextResponse.json(
         { error: "Все обязательные поля должны быть заполнены" },
+        { status: 400 }
+      );
+    }
+
+    // Отрицательная сумма записалась бы как доход и увеличила баланс
+    if (
+      !(Number.isFinite(value) && value > 0) ||
+      !(Number.isFinite(total_price) && total_price > 0)
+    ) {
+      return NextResponse.json(
+        { error: "Объем и сумма заказа должны быть положительными числами" },
         { status: 400 }
       );
     }
@@ -98,26 +118,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Получаем текущий баланс (займы - расходы)
-    const loansResult = db
-      .prepare("SELECT SUM(amount) as total FROM loans WHERE is_paid = false")
-      .get() as { total: number | null };
-    const totalLoans = loansResult.total || 0;
+    // Баланс кассы без долга менеджеров (см. lib/balance.ts)
+    const currentBalance = getCashBalance();
 
-    const expensesResult = db
-      .prepare("SELECT SUM(amount) as total FROM expenses WHERE amount > 0")
-      .get() as { total: number | null };
-    const totalExpenses = expensesResult.total || 0;
-
-    const incomeResult = db
-      .prepare("SELECT SUM(ABS(amount)) as total FROM expenses WHERE amount < 0")
-      .get() as { total: number | null };
-    const totalIncome = incomeResult.total || 0;
-
-    const currentBalance = totalLoans + totalIncome - totalExpenses;
-
-    // Проверяем, достаточно ли средств
-    if (total_price > currentBalance) {
+    // Проверяем, достаточно ли средств (заказ в займ деньги из кассы не тратит)
+    if (status !== "loan" && total_price > currentBalance) {
       return NextResponse.json(
         {
           error: `Недостаточно средств! Необходимо: $${total_price.toFixed(
@@ -175,13 +180,7 @@ export async function POST(request: NextRequest) {
         );
 
         // Логируем активность
-        const insertLog = db.prepare(`
-          INSERT INTO activity_logs (user_id, action, entity_type, details)
-          VALUES (1, 'долг_поставщика_создан', 'supplier', ?)
-        `);
-        insertLog.run(
-          `Создан долг поставщика ${supplier_id}: ${unloaded_value} ${measurement} товара ID ${item_id} (заказ ${order_number})`
-        );
+        logActivity(session.userId, "долг_поставщика_создан", "supplier", `Создан долг поставщика ${supplier_id}: ${unloaded_value} ${measurement} товара ID ${item_id} (заказ ${order_number})`);
       }
 
       // Добавляем расход только если это не займ
@@ -244,40 +243,24 @@ export async function POST(request: NextRequest) {
 
         // Логируем погашение долга
         if (debt_handling.type === "subtract") {
-          const insertDebtLog = db.prepare(`
-            INSERT INTO activity_logs (user_id, action, entity_type, details)
-            VALUES (1, 'зачет_долга', 'supplier', ?)
-          `);
-          insertDebtLog.run(
-            `Зачтен долг поставщика ${supplier_id}: ${
+          logActivity(session.userId, "зачет_долга", "supplier", `Зачтен долг поставщика ${supplier_id}: ${
               debt_handling.amount
             } ${measurement} товара "${debt_handling.item_name}". Экономия: $${(
               debt_handling.original_total_price -
               debt_handling.final_total_price
-            ).toFixed(2)}`
-          );
+            ).toFixed(2)}`);
         } else if (debt_handling.type === "add_to_order") {
-          const insertDebtLog = db.prepare(`
-            INSERT INTO activity_logs (user_id, action, entity_type, details)
-            VALUES (1, 'добавление_долга_к_заказу', 'supplier', ?)
-          `);
-          insertDebtLog.run(
-            `Добавлен долг поставщика ${supplier_id} к заказу: +${debt_handling.amount} ${measurement} товара "${debt_handling.item_name}"`
-          );
+          logActivity(session.userId, "добавление_долга_к_заказу", "supplier", `Добавлен долг поставщика ${supplier_id} к заказу: +${debt_handling.amount} ${measurement} товара "${debt_handling.item_name}"`);
         }
       }
 
       // Логируем создание заказа
-      const insertLog = db.prepare(`
-        INSERT INTO activity_logs (user_id, action, entity_type, details)
-        VALUES (1, 'заказ_создан', 'order', ?)
-      `);
       const logDetails = debt_handling
         ? `Создан заказ ${order_number} на сумму $${total_price} (с учетом долга поставщика: ${
             debt_handling.type === "subtract" ? "вычет" : "добавление"
           } ${debt_handling.amount} ${measurement})`
         : `Создан заказ ${order_number} на сумму $${total_price}`;
-      insertLog.run(logDetails);
+      logActivity(session.userId, "заказ_создан", "order", logDetails);
     });
 
     transaction();

@@ -1,12 +1,24 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Icon, { type IconName } from "@/components/Icon";
+import { PageHeader, StatCard } from "@/components/ui";
+import { formatMoney, parseDbDate } from "@/lib/format";
+
+interface PipelineRow {
+  status: string;
+  count: number;
+  total: number;
+}
 
 interface DashboardStats {
   totalOrders: number;
   pendingOrders: number;
   totalBalance: number;
   suppliersCount: number;
+  pipeline: PipelineRow[];
+  partnerLoans: number;
+  managerDebt: number;
 }
 
 interface ActivityLog {
@@ -15,352 +27,243 @@ interface ActivityLog {
   user_name: string;
   action: string;
   entity_type: string;
-  entity_id?: number;
   details?: string;
   created_at: string;
 }
 
+// Этапы заказа в порядке движения товара
+const STAGES: { status: string; label: string; hint: string; icon: IconName }[] = [
+  { status: "loan", label: "Не оплачено", hint: "Загрузка в долг", icon: "clock" },
+  { status: "paid", label: "Оплачен", hint: "Ждет контейнер", icon: "wallet" },
+  { status: "in_container", label: "В контейнере", hint: "Ждет оплаты транспорта", icon: "archive" },
+  { status: "on_way", label: "В пути", hint: "Ждет таможни", icon: "truck" },
+  { status: "warehouse", label: "На складе", hint: "Готов к продаже", icon: "building" },
+  { status: "sold", label: "Продан", hint: "Сделка закрыта", icon: "trendUp" },
+];
+
+function activityIcon(action: string): IconName {
+  if (action.includes("займ")) return "wallet";
+  if (action.includes("транспорт")) return "truck";
+  if (action.includes("контейнер")) return "archive";
+  if (action.includes("продаж")) return "trendUp";
+  if (action.includes("перевод") || action.includes("денег")) return "transfer";
+  if (action.includes("заказ")) return "cube";
+  return "clock";
+}
+
+function relativeTime(dateString: string) {
+  const date = parseDbDate(dateString) ?? new Date(dateString);
+  const diffMs = Date.now() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return "только что";
+  if (diffMins < 60) return `${diffMins} мин назад`;
+  if (diffHours < 24) return `${diffHours} ч назад`;
+  if (diffDays === 1) return "вчера";
+  if (diffDays < 7) return `${diffDays} дн назад`;
+  return date.toLocaleDateString("ru-RU");
+}
+
 export default function Dashboard() {
-  const [stats, setStats] = useState<DashboardStats>({
-    totalOrders: 0,
-    pendingOrders: 0,
-    totalBalance: 0,
-    suppliersCount: 0,
-  });
-  const [recentActivities, setRecentActivities] = useState<ActivityLog[]>([]);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [activities, setActivities] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Загрузка статистики и активности
-    fetchStats();
-    fetchRecentActivities();
+    Promise.all([
+      fetch("/api/dashboard/stats")
+        .then((r) => (r.ok ? r.json() : null))
+        .then(setStats),
+      fetch("/api/activity-logs?limit=6&exclude_action=вход")
+        .then((r) => (r.ok ? r.json() : []))
+        .then((data) => setActivities(Array.isArray(data) ? data : [])),
+    ])
+      .catch((error) => console.error("Ошибка загрузки главной:", error))
+      .finally(() => setLoading(false));
   }, []);
 
-  const fetchStats = async () => {
-    try {
-      const response = await fetch("/api/dashboard/stats");
-      const data = await response.json();
-      setStats(data);
-    } catch (error) {
-      console.error("Ошибка загрузки статистики:", error);
-    }
-  };
+  const today = new Date().toLocaleDateString("ru-RU", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
 
-  const fetchRecentActivities = async () => {
-    try {
-      const response = await fetch("/api/activity-logs?limit=5");
-      const data = await response.json();
-      setRecentActivities(Array.isArray(data) ? data.slice(0, 3) : []);
-    } catch (error) {
-      console.error("Ошибка загрузки активности:", error);
-      setRecentActivities([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getActivityIcon = (action: string) => {
-    switch (action) {
-      case "создан":
-      case "заказ_создан":
-        return "📦";
-      case "займ_взят":
-      case "займ_погашен":
-        return "💰";
-      case "оплата_транспорта":
-        return "🚛";
-      case "оплата_пошлины":
-      case "оплата_таможни":
-        return "🚢";
-      case "продажа":
-        return "💵";
-      case "обновлен":
-        return "✏️";
-      case "удален":
-        return "🗑️";
-      case "вход":
-        return "🔐";
-      default:
-        return "📝";
-    }
-  };
-
-  const getActivityTitle = (log: ActivityLog) => {
-    switch (log.action) {
-      case "создан":
-        if (log.entity_type === "partner") return "Новый партнер";
-        if (log.entity_type === "supplier") return "Новый поставщик";
-        return "Создан объект";
-      case "заказ_создан":
-        return "Новый заказ создан";
-      case "займ_взят":
-        return "Займ получен";
-      case "займ_погашен":
-        return "Займ погашен";
-      case "оплата_транспорта":
-        return "Оплата транспорта";
-      case "оплата_таможни":
-        return "Оплата таможни";
-      case "продажа":
-        return "Продажа товара";
-      default:
-        return log.action;
-    }
-  };
-
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffHours = Math.floor(diffMs / 3600000);
-
-    if (diffHours < 1) return "недавно";
-    if (diffHours < 24) return `${diffHours} ч назад`;
-
-    const diffDays = Math.floor(diffMs / 86400000);
-    if (diffDays === 1) return "вчера";
-    if (diffDays < 7) return `${diffDays} дн назад`;
-
-    return date.toLocaleDateString("ru-RU");
-  };
-
-  const quickActions = [
-    {
-      title: "Новый заказ",
-      description: "Создать новый заказ",
-      href: "/orders",
-      icon: "📦",
-      color: "from-blue-500 to-indigo-600",
-      bgColor: "bg-blue-50 hover:bg-blue-100",
-    },
-    {
-      title: "Добавить партнера",
-      description: "Зарегистрировать нового партнера",
-      href: "/partners",
-      icon: "🤝",
-      color: "from-green-500 to-emerald-600",
-      bgColor: "bg-green-50 hover:bg-green-100",
-    },
-    {
-      title: "Операции с кассой",
-      description: "Управление финансами",
-      href: "/cash",
-      icon: "💰",
-      color: "from-yellow-500 to-orange-600",
-      bgColor: "bg-yellow-50 hover:bg-yellow-100",
-    },
-    {
-      title: "Поставщики",
-      description: "Управление поставщиками",
-      href: "/suppliers",
-      icon: "🏭",
-      color: "from-purple-500 to-indigo-600",
-      bgColor: "bg-purple-50 hover:bg-purple-100",
-    },
-  ];
-
-  const statCards = [
-    {
-      title: "Всего заказов",
-      value: stats.totalOrders,
-      icon: "📦",
-      color: "from-blue-500 to-blue-600",
-      bgColor: "bg-blue-50",
-      textColor: "text-blue-700",
-    },
-    {
-      title: "В ожидании",
-      value: stats.pendingOrders,
-      icon: "⏳",
-      color: "from-yellow-500 to-yellow-600",
-      bgColor: "bg-yellow-50",
-      textColor: "text-yellow-700",
-    },
-    {
-      title: "Баланс",
-      value: `$${stats.totalBalance.toLocaleString()}`,
-      icon: "💰",
-      color: "from-green-500 to-green-600",
-      bgColor: "bg-green-50",
-      textColor: "text-green-700",
-    },
-    {
-      title: "Поставщики",
-      value: stats.suppliersCount,
-      icon: "🏭",
-      color: "from-purple-500 to-purple-600",
-      bgColor: "bg-purple-50",
-      textColor: "text-purple-700",
-    },
-  ];
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Загрузка данных...</p>
-        </div>
-      </div>
-    );
-  }
+  const stageData = STAGES.map((stage) => {
+    const row = stats?.pipeline?.find((p) => p.status === stage.status);
+    return { ...stage, count: row?.count ?? 0, total: row?.total ?? 0 };
+  });
+  const maxCount = Math.max(1, ...stageData.map((s) => s.count));
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {/* Заголовок */}
-        <div className="mb-8 sm:mb-12 text-center sm:text-left">
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-900 mb-3 sm:mb-4">
-            Добро пожаловать в{" "}
-            <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-              DrevMaster
-            </span>
-          </h1>
-          <p className="text-base sm:text-lg text-gray-600 max-w-2xl">
-            Система управления деревообрабатывающим бизнесом
-          </p>
-        </div>
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      <PageHeader
+        title="Обзор"
+        description={today.charAt(0).toUpperCase() + today.slice(1)}
+        actions={
+          <>
+            <Link href="/cash" className="btn btn-secondary">
+              <Icon name="wallet" className="h-4 w-4" />
+              Касса
+            </Link>
+            <Link href="/orders" className="btn btn-primary">
+              <Icon name="plus" className="h-4 w-4" />
+              Новый заказ
+            </Link>
+          </>
+        }
+      />
 
-        {/* Статистические карточки */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-8 sm:mb-12">
-          {statCards.map((card, index) => (
-            <div
-              key={card.title}
-              className={`${card.bgColor} rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-white/50 backdrop-blur-sm shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1`}
-              style={{
-                animationDelay: `${index * 100}ms`,
-                animation: "slideInUp 0.6s ease-out forwards",
-              }}
-            >
-              <div className="flex items-center justify-between mb-3 sm:mb-4">
-                <div
-                  className={`w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-r ${card.color} rounded-lg sm:rounded-xl flex items-center justify-center text-lg sm:text-xl shadow-lg`}
-                >
-                  {card.icon}
-                </div>
-              </div>
-              <div>
-                <h3
-                  className={`text-xs sm:text-sm font-medium ${card.textColor} mb-1 sm:mb-2`}
-                >
-                  {card.title}
-                </h3>
-                <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900">
-                  {card.value}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Быстрые действия */}
-        <div className="mb-8 sm:mb-12">
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4 sm:mb-6 text-center sm:text-left">
-            Быстрые действия
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-            {quickActions.map((action, index) => (
-              <Link
-                key={action.title}
-                href={action.href}
-                className={`${action.bgColor} rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-white/50 backdrop-blur-sm transition-all duration-300 transform hover:-translate-y-2 hover:shadow-lg group`}
-                style={{
-                  animationDelay: `${(index + 4) * 100}ms`,
-                  animation: "slideInUp 0.6s ease-out forwards",
-                }}
-              >
-                <div className="flex flex-col items-center text-center">
-                  <div
-                    className={`w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-r ${action.color} rounded-xl sm:rounded-2xl flex items-center justify-center text-2xl sm:text-3xl mb-3 sm:mb-4 shadow-lg group-hover:scale-110 transition-transform duration-300`}
-                  >
-                    {action.icon}
-                  </div>
-                  <h3 className="text-sm sm:text-lg font-semibold text-gray-900 mb-1 sm:mb-2">
-                    {action.title}
-                  </h3>
-                  <p className="text-xs sm:text-sm text-gray-600 leading-relaxed">
-                    {action.description}
-                  </p>
-                </div>
-              </Link>
-            ))}
+      {/* Ключевые показатели */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="card relative overflow-hidden bg-ink-950 p-5 text-white sm:col-span-2 xl:col-span-1">
+          <div className="text-sm font-medium text-ink-300">Баланс кассы</div>
+          <div className="mt-2 text-3xl font-semibold tracking-tight">
+            {loading ? "—" : formatMoney(stats?.totalBalance)}
+          </div>
+          <div className="mt-1 text-xs text-ink-400">
+            Займы + поступления − расходы
           </div>
         </div>
+        <StatCard
+          label="Мы должны партнерам"
+          value={loading ? "—" : formatMoney(stats?.partnerLoans)}
+          hint="Непогашенные займы"
+          icon="users"
+          tone="negative"
+        />
+        <StatCard
+          label="Нам должны менеджеры"
+          value={loading ? "—" : formatMoney(stats?.managerDebt)}
+          hint="За товар, переданный на продажу"
+          icon="user"
+          tone="positive"
+        />
+        <StatCard
+          label="Заказы в работе"
+          value={loading ? "—" : stats?.pendingOrders ?? 0}
+          hint={loading ? "" : `Всего ${stats?.totalOrders ?? 0} · поставщиков ${stats?.suppliersCount ?? 0}`}
+          icon="cube"
+          tone="brand"
+        />
+      </div>
 
-        {/* Последние активности */}
-        <div className="mb-12">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6">
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-3 sm:mb-0">
-              Последние активности
+      <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
+        {/* Путь заказа */}
+        <section className="card xl:col-span-2">
+          <div className="flex items-center justify-between border-b border-ink-100 px-5 py-4">
+            <div>
+              <h2 className="text-base font-semibold text-ink-900">
+                Путь заказа
+              </h2>
+              <p className="text-xs text-ink-500">
+                Сколько заказов сейчас на каждом этапе
+              </p>
+            </div>
+            <Link
+              href="/orders"
+              className="flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700"
+            >
+              Все заказы
+              <Icon name="chevronRight" className="h-4 w-4" />
+            </Link>
+          </div>
+          <ul className="divide-y divide-ink-100">
+            {stageData.map((stage) => (
+              <li key={stage.status} className="flex items-center gap-4 px-5 py-3">
+                <div className="rounded-lg bg-ink-100 p-2 text-ink-600">
+                  <Icon name={stage.icon} className="h-4 w-4" />
+                </div>
+                <div className="w-32 shrink-0 sm:w-40">
+                  <div className="text-sm font-medium text-ink-900">
+                    {stage.label}
+                  </div>
+                  <div className="text-xs text-ink-500">{stage.hint}</div>
+                </div>
+                <div className="hidden h-2 flex-1 overflow-hidden rounded-full bg-ink-100 sm:block">
+                  <div
+                    className="h-full rounded-full bg-brand-500"
+                    style={{ width: `${(stage.count / maxCount) * 100}%` }}
+                  />
+                </div>
+                <div className="ml-auto w-24 text-right">
+                  <div className="text-sm font-semibold text-ink-900">
+                    {stage.count}
+                  </div>
+                  <div className="text-xs text-ink-500">
+                    {formatMoney(stage.total)}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        {/* Последние операции */}
+        <section className="card">
+          <div className="flex items-center justify-between border-b border-ink-100 px-5 py-4">
+            <h2 className="text-base font-semibold text-ink-900">
+              Последние операции
             </h2>
             <Link
               href="/history"
-              className="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-500 transition-colors self-start sm:self-auto"
+              className="flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700"
             >
-              Смотреть все
-              <svg
-                className="ml-1 w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 5l7 7-7 7"
-                />
-              </svg>
+              История
+              <Icon name="chevronRight" className="h-4 w-4" />
             </Link>
           </div>
+          {loading ? (
+            <div className="space-y-3 p-5">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="h-10 animate-pulse rounded-lg bg-ink-100" />
+              ))}
+            </div>
+          ) : activities.length > 0 ? (
+            <ul className="divide-y divide-ink-100">
+              {activities.map((activity) => (
+                <li key={activity.id} className="flex gap-3 px-5 py-3">
+                  <div className="mt-0.5 rounded-lg bg-ink-100 p-1.5 text-ink-500">
+                    <Icon name={activityIcon(activity.action)} className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="line-clamp-2 text-sm text-ink-800">
+                      {activity.details || activity.action}
+                    </p>
+                    <p className="mt-0.5 text-xs text-ink-500">
+                      {activity.user_name ? `${activity.user_name} · ` : ""}
+                      {relativeTime(activity.created_at)}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="px-5 py-12 text-center text-sm text-ink-500">
+              Операций пока нет
+            </div>
+          )}
+        </section>
+      </div>
 
-          <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg border border-white/50 p-4 sm:p-6 space-y-3 sm:space-y-4">
-            {loading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                <span className="ml-3 text-gray-600">
-                  Загрузка активности...
-                </span>
-              </div>
-            ) : recentActivities.length === 0 ? (
-              <div className="text-center py-8">
-                <div className="text-4xl mb-3">📈</div>
-                <p className="text-gray-500">
-                  Активность пока не зафиксирована
-                </p>
-              </div>
-            ) : (
-              recentActivities.map((activity, index) => (
-                <div
-                  key={activity.id}
-                  className="flex items-start space-x-3 sm:space-x-4 p-3 sm:p-4 bg-gray-50 rounded-lg sm:rounded-xl hover:bg-gray-100 transition-colors"
-                  style={{
-                    animationDelay: `${index * 100}ms`,
-                    animation: "slideInUp 0.6s ease-out forwards",
-                  }}
-                >
-                  <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <span className="text-lg sm:text-xl">
-                      {getActivityIcon(activity.action)}
-                    </span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm sm:text-base font-medium text-gray-900">
-                      {getActivityTitle(activity)}
-                    </p>
-                    <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                      {activity.details ||
-                        `${activity.user_name || "Система"} выполнил действие`}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      {formatTime(activity.created_at)}
-                    </p>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
+      {/* Быстрые действия */}
+      <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[
+          { href: "/orders", label: "Создать заказ", icon: "cube" as const },
+          { href: "/cash", label: "Взять займ", icon: "wallet" as const },
+          { href: "/partners", label: "Добавить партнера", icon: "users" as const },
+          { href: "/suppliers", label: "Поставщики", icon: "building" as const },
+        ].map((action) => (
+          <Link
+            key={action.label}
+            href={action.href}
+            className="card flex items-center gap-3 p-4 text-sm font-medium text-ink-700 transition-colors hover:border-ink-300 hover:bg-ink-50"
+          >
+            <Icon name={action.icon} className="h-5 w-5 text-ink-400" />
+            {action.label}
+          </Link>
+        ))}
       </div>
     </div>
   );

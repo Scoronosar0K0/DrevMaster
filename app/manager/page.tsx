@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import Icon, { type IconName } from "@/components/Icon";
+import { PageHeader, StatCard } from "@/components/ui";
+import { formatMoney } from "@/lib/format";
 
 interface UserInfo {
   id: number;
@@ -16,6 +19,32 @@ interface ManagerStats {
   pendingTransfers: number;
 }
 
+const NAV_TILES: {
+  href: string;
+  title: string;
+  description: string;
+  icon: IconName;
+}[] = [
+  {
+    href: "/manager/cash",
+    title: "Мои финансы",
+    description: "Просмотр долгов и баланса",
+    icon: "wallet",
+  },
+  {
+    href: "/manager/warehouse",
+    title: "Мой склад",
+    description: "Товары для продажи",
+    icon: "archive",
+  },
+  {
+    href: "/manager/transfers",
+    title: "Переводы",
+    description: "Отправка денег администратору",
+    icon: "transfer",
+  },
+];
+
 export default function ManagerDashboard() {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [stats, setStats] = useState<ManagerStats>({
@@ -24,7 +53,6 @@ export default function ManagerDashboard() {
     pendingTransfers: 0,
   });
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
 
   useEffect(() => {
     fetchUserInfo();
@@ -57,187 +85,66 @@ export default function ManagerDashboard() {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await fetch("/api/auth/login", { method: "DELETE" });
-      router.push("/login");
-    } catch (error) {
-      console.error("Ошибка выхода:", error);
-    }
-  };
-
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-lg">Загрузка...</div>
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <div className="flex items-center justify-center py-24 text-ink-500">
+          <span className="loading-spinner mr-3 text-brand-600" />
+          <span className="text-sm">Загрузка...</span>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Заголовок */}
-      <div className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-6">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">
-                Панель менеджера
-              </h1>
-              <p className="text-gray-600">
-                Добро пожаловать, {userInfo?.name}!
-              </p>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition duration-200"
-            >
-              Выйти
-            </button>
-          </div>
-        </div>
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      <PageHeader
+        title="Панель менеджера"
+        description={`Добро пожаловать, ${userInfo?.name ?? ""}!`}
+      />
+
+      {/* Статистика */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <StatCard
+          label="Общий долг"
+          value={formatMoney(stats.totalDebt)}
+          icon="wallet"
+          tone="negative"
+        />
+        <StatCard
+          label="Товары на складе"
+          value={stats.totalWarehouseItems}
+          icon="archive"
+          tone="brand"
+        />
+        <StatCard
+          label="Ожидающие переводы"
+          value={stats.pendingTransfers}
+          icon="clock"
+          tone="warning"
+        />
       </div>
 
-      {/* Основной контент */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Статистика */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="w-8 h-8 bg-red-600 rounded-md flex items-center justify-center">
-                    <span className="text-white font-bold">$</span>
-                  </div>
-                </div>
-                <div className="ml-5 w-0 flex-1">
-                  <dl>
-                    <dt className="text-sm font-medium text-gray-500 truncate">
-                      Общий долг
-                    </dt>
-                    <dd className="text-lg font-medium text-gray-900">
-                      ${stats.totalDebt.toFixed(2)}
-                    </dd>
-                  </dl>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="w-8 h-8 bg-blue-600 rounded-md flex items-center justify-center">
-                    <span className="text-white font-bold">📦</span>
-                  </div>
-                </div>
-                <div className="ml-5 w-0 flex-1">
-                  <dl>
-                    <dt className="text-sm font-medium text-gray-500 truncate">
-                      Товары на складе
-                    </dt>
-                    <dd className="text-lg font-medium text-gray-900">
-                      {stats.totalWarehouseItems}
-                    </dd>
-                  </dl>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="w-8 h-8 bg-yellow-600 rounded-md flex items-center justify-center">
-                    <span className="text-white font-bold">⏳</span>
-                  </div>
-                </div>
-                <div className="ml-5 w-0 flex-1">
-                  <dl>
-                    <dt className="text-sm font-medium text-gray-500 truncate">
-                      Ожидающие переводы
-                    </dt>
-                    <dd className="text-lg font-medium text-gray-900">
-                      {stats.pendingTransfers}
-                    </dd>
-                  </dl>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Навигация */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <div
-            onClick={() => router.push("/manager/cash")}
-            className="bg-white overflow-hidden shadow rounded-lg hover:shadow-md transition-shadow cursor-pointer"
+      {/* Навигация */}
+      <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {NAV_TILES.map((tile) => (
+          <Link
+            key={tile.href}
+            href={tile.href}
+            className="card flex items-center gap-4 p-5 transition-colors hover:border-ink-300 hover:bg-ink-50"
           >
-            <div className="p-6">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="w-10 h-10 bg-green-600 rounded-md flex items-center justify-center">
-                    <span className="text-white font-bold text-lg">💰</span>
-                  </div>
-                </div>
-                <div className="ml-4">
-                  <h3 className="text-lg font-medium text-gray-900">
-                    Мои финансы
-                  </h3>
-                  <p className="text-sm text-gray-500">
-                    Просмотр долгов и баланса
-                  </p>
-                </div>
-              </div>
+            <div className="rounded-lg bg-ink-100 p-2 text-ink-600">
+              <Icon name={tile.icon} className="h-5 w-5" />
             </div>
-          </div>
-
-          <div
-            onClick={() => router.push("/manager/warehouse")}
-            className="bg-white overflow-hidden shadow rounded-lg hover:shadow-md transition-shadow cursor-pointer"
-          >
-            <div className="p-6">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="w-10 h-10 bg-blue-600 rounded-md flex items-center justify-center">
-                    <span className="text-white font-bold text-lg">🏪</span>
-                  </div>
-                </div>
-                <div className="ml-4">
-                  <h3 className="text-lg font-medium text-gray-900">
-                    Мой склад
-                  </h3>
-                  <p className="text-sm text-gray-500">Товары для продажи</p>
-                </div>
-              </div>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-base font-semibold text-ink-900">
+                {tile.title}
+              </h3>
+              <p className="text-sm text-ink-500">{tile.description}</p>
             </div>
-          </div>
-
-          <div
-            onClick={() => router.push("/manager/transfers")}
-            className="bg-white overflow-hidden shadow rounded-lg hover:shadow-md transition-shadow cursor-pointer"
-          >
-            <div className="p-6">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="w-10 h-10 bg-purple-600 rounded-md flex items-center justify-center">
-                    <span className="text-white font-bold text-lg">💸</span>
-                  </div>
-                </div>
-                <div className="ml-4">
-                  <h3 className="text-lg font-medium text-gray-900">
-                    Переводы
-                  </h3>
-                  <p className="text-sm text-gray-500">
-                    Отправка денег администратору
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+            <Icon name="chevronRight" className="h-4 w-4 text-ink-400" />
+          </Link>
+        ))}
       </div>
     </div>
   );

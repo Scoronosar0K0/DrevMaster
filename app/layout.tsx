@@ -3,11 +3,15 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import Navigation from "@/components/Navigation";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({
+  subsets: ["latin", "cyrillic"],
+  variable: "--font-inter",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
-  title: "DrevMaster - Система управления заказами",
-  description: "Система управления заказами древесины",
+  title: "DrevMaster — управление заказами",
+  description: "Учет заказов, кассы и займов в торговле древесиной",
 };
 
 export default function RootLayout({
@@ -16,12 +20,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ru">
-      <body className={inter.className}>
-        <div className="min-h-screen bg-gray-50">
-          <Navigation />
-          <main className="container mx-auto px-4 py-8">{children}</main>
-        </div>
+    <html lang="ru" className={inter.variable}>
+      <body>
+        <Navigation>{children}</Navigation>
       </body>
     </html>
   );

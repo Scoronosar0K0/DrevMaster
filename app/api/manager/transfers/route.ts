@@ -1,29 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { jwtVerify } from "jose";
+import { logActivity } from "@/lib/activity";
+import { resolveTransferRecipient } from "@/lib/transfers";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
 
 initDatabase();
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "drevmaster-secret-key-2024"
-);
-
 export async function GET(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
-    // Получаем токен из cookie
-    const token = request.cookies.get("auth-token")?.value;
-
-    if (!token) {
-      return NextResponse.json(
-        { error: "Токен авторизации не найден" },
-        { status: 401 }
-      );
-    }
-
-    // Декодируем токен
-    const { payload } = await jwtVerify(token, JWT_SECRET);
-    const userId = payload.userId as number;
-    const userRole = payload.role as string;
+    const userId = session.userId;
+    const userRole = session.role;
 
     if (userRole !== "manager") {
       return NextResponse.json(
@@ -62,21 +51,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
-    // Получаем токен из cookie
-    const token = request.cookies.get("auth-token")?.value;
-
-    if (!token) {
-      return NextResponse.json(
-        { error: "Токен авторизации не найден" },
-        { status: 401 }
-      );
-    }
-
-    // Декодируем токен
-    const { payload } = await jwtVerify(token, JWT_SECRET);
-    const userId = payload.userId as number;
-    const userRole = payload.role as string;
+    const userId = session.userId;
+    const userRole = session.role;
 
     if (userRole !== "manager") {
       return NextResponse.json(
@@ -86,22 +66,19 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { to_user_id, amount, description } = body;
+    const { amount, description } = body;
 
-    if (!to_user_id || !amount || amount <= 0) {
+    if (!(Number.isFinite(amount) && amount > 0)) {
       return NextResponse.json(
-        { error: "Получатель и сумма обязательны" },
+        { error: "Укажите сумму больше нуля" },
         { status: 400 }
       );
     }
 
-    // Проверяем, что получатель существует
-    const recipient = db
-      .prepare("SELECT id, name FROM users WHERE id = ?")
-      .get(to_user_id);
+    const recipient = resolveTransferRecipient(body);
     if (!recipient) {
       return NextResponse.json(
-        { error: "Получатель не найден" },
+        { error: "Получатель не найден или неактивен" },
         { status: 404 }
       );
     }
@@ -114,22 +91,15 @@ export async function POST(request: NextRequest) {
 
     const result = insertTransfer.run(
       userId,
-      to_user_id,
+      recipient.id,
       amount,
       description || null
     );
 
     // Логируем активность
-    const insertLog = db.prepare(`
-      INSERT INTO activity_logs (user_id, action, entity_type, details)
-      VALUES (?, 'заявка_на_перевод', 'transfer', ?)
-    `);
-    insertLog.run(
-      userId,
-      `Создана заявка на перевод $${amount} пользователю ${
-        (recipient as any).name
-      }`
-    );
+    logActivity(session.userId, "заявка_на_перевод", "transfer", `Создана заявка на перевод $${amount} пользователю ${
+        recipient.name
+      }`);
 
     return NextResponse.json({
       success: true,

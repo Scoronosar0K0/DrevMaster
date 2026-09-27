@@ -1,40 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
-import { jwtVerify } from "jose";
+import { requireActiveSession } from "@/lib/session";
+import { db, initDatabase } from "@/lib/database";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "drevmaster-secret-key-2024"
-);
+initDatabase();
 
 export async function GET(request: NextRequest) {
+  // 401, если пользователь удален, деактивирован или сменил роль —
+  // клиент по этому ответу завершает сессию
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
-    // Получаем токен из cookie
-    const token = request.cookies.get("auth-token")?.value;
-
-    if (!token) {
-      return NextResponse.json(
-        { error: "Токен авторизации не найден" },
-        { status: 401 }
-      );
-    }
-
-    // Декодируем токен
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    // Имя и контакты берем из базы: в токене их нет, и они могут меняться
+    const user = db
+      .prepare(
+        "SELECT id, username, name, email, phone, role FROM users WHERE id = ?"
+      )
+      .get(session.userId) as any;
 
     return NextResponse.json({
       success: true,
       user: {
-        id: payload.userId,
-        username: payload.username,
-        name: payload.name,
-        role: payload.role,
-        partnerId: payload.partnerId,
+        id: user.id,
+        username: user.username,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        partnerId: session.partnerId,
       },
     });
   } catch (error) {
-    console.error("Ошибка проверки токена:", error);
+    console.error("Ошибка получения пользователя:", error);
     return NextResponse.json(
-      { error: "Недействительный токен" },
-      { status: 401 }
+      { error: "Ошибка получения пользователя" },
+      { status: 500 }
     );
   }
 }

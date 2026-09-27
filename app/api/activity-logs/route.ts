@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
 
 initDatabase();
 
 export async function GET(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     // Получаем параметры из URL 
     const url = new URL(request.url);
@@ -19,7 +23,6 @@ export async function GET(request: NextRequest) {
         al.user_id,
         al.action,
         al.entity_type,
-        al.entity_id,
         al.details,
         al.created_at,
         u.name as user_name
@@ -32,6 +35,13 @@ export async function GET(request: NextRequest) {
     if (action) {
       query += " AND al.action = ?";
       params.push(action);
+    }
+
+    // Например, exclude_action=вход убирает записи о входе из ленты на главной
+    const excludeAction = url.searchParams.get("exclude_action");
+    if (excludeAction) {
+      query += " AND al.action != ?";
+      params.push(excludeAction);
     }
 
     if (entityType) {
@@ -54,7 +64,29 @@ export async function GET(request: NextRequest) {
       params.push(dateTo);
     }
 
-    query += " ORDER BY al.created_at DESC LIMIT 1000";
+    // Границы периода в UTC ('YYYY-MM-DD HH:MM:SS'), как хранит SQLite.
+    // Страница истории переводит в них выбранные местные даты, чтобы фильтр
+    // совпадал с датами, которые пользователь видит на экране
+    const UTC_DATETIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+    const createdFrom = url.searchParams.get("created_from");
+    const createdBefore = url.searchParams.get("created_before");
+
+    if (createdFrom && UTC_DATETIME.test(createdFrom)) {
+      query += " AND al.created_at >= ?";
+      params.push(createdFrom);
+    }
+
+    if (createdBefore && UTC_DATETIME.test(createdBefore)) {
+      query += " AND al.created_at < ?";
+      params.push(createdBefore);
+    }
+
+    const limit = Math.min(
+      Math.max(parseInt(url.searchParams.get("limit") || "") || 1000, 1),
+      1000
+    );
+    query += " ORDER BY al.created_at DESC, al.id DESC LIMIT ?";
+    params.push(limit);
 
     let logs = [];
     try {

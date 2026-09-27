@@ -2,11 +2,85 @@ const Database = require("better-sqlite3");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 
-const dbPath = path.join(process.cwd(), "drevmaster.db");
+// DATABASE_PATH позволяет хранить базу вне папки с кодом (см. deploy.sh)
+const dbPath =
+  process.env.DATABASE_PATH || path.join(process.cwd(), "drevmaster.db");
 const db = new Database(dbPath);
 
 // Включаем поддержку внешних ключей
 db.pragma("foreign_keys = ON");
+
+// Ждем освобождения блокировки вместо мгновенной ошибки SQLITE_BUSY
+// (при сборке несколько процессов Next.js открывают базу одновременно)
+db.pragma("busy_timeout = 5000");
+
+// Выполняет ALTER TABLE ADD COLUMN, игнорируя ошибку, если другой процесс
+// уже успел добавить колонку
+function addColumnIfMissing(sql: string) {
+  try {
+    db.exec(sql);
+  } catch (e: any) {
+    if (!String(e?.message).includes("duplicate column name")) throw e;
+  }
+}
+
+let isInitialized = false;
+
+function findOrdersOldReferences() {
+  return db
+    .prepare(
+      "SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name != 'orders_old' AND sql LIKE '%orders_old%'"
+    )
+    .all() as { name: string; sql: string }[];
+}
+
+function repairOrdersOldReferences() {
+  if (findOrdersOldReferences().length === 0) return;
+
+  db.pragma("foreign_keys = OFF");
+  // Не даем SQLite переписывать ссылки других таблиц при переименовании
+  db.pragma("legacy_alter_table = ON");
+  try {
+    // IMMEDIATE сразу берет блокировку записи: параллельный процесс сборки
+    // дождется ее и перечитает схему, уже исправленную первым процессом
+    db.transaction(() => {
+      const broken = findOrdersOldReferences();
+      if (broken.length === 0) return;
+      console.log(
+        `Исправляем внешние ключи на orders_old в таблицах: ${broken
+          .map((t) => t.name)
+          .join(", ")}`
+      );
+      for (const table of broken) {
+        const tmp = `${table.name}__repair`;
+        const fixedSql = table.sql
+          .replace(/["'`]?\borders_old\b["'`]?/g, "orders")
+          .replace(
+            /^CREATE TABLE\s+(IF NOT EXISTS\s+)?["'`]?\w+["'`]?/i,
+            `CREATE TABLE "${tmp}"`
+          );
+        const columns = (db.pragma(`table_info("${table.name}")`) as any[])
+          .map((col) => `"${col.name}"`)
+          .join(", ");
+
+        db.exec(fixedSql);
+        db.exec(
+          `INSERT INTO "${tmp}" (${columns}) SELECT ${columns} FROM "${table.name}"`
+        );
+        db.exec(`DROP TABLE "${table.name}"`);
+        db.exec(`ALTER TABLE "${tmp}" RENAME TO "${table.name}"`);
+      }
+    }).immediate();
+  } finally {
+    db.pragma("legacy_alter_table = OFF");
+    db.pragma("foreign_keys = ON");
+  }
+
+  const problems = db.pragma("foreign_key_check") as unknown[];
+  if (problems.length > 0) {
+    console.log("Нарушения внешних ключей после ремонта:", problems);
+  }
+}
 
 // Типы данных
 export interface User {
@@ -96,7 +170,122 @@ export interface ActivityLog {
 }
 
 // Инициализация таблиц
+// Старый код при каждой перепродаже менеджером создавал еще один займ на
+// сумму перепродажи (без order_id) в той же транзакции, что и запись в
+// manager_sales. Теперь менеджер должен только цену передачи: такие займы
+// закрываем, а уже внесенные по ним деньги засчитываем в долг за товар
+function closeLegacyResaleLoans() {
+  const hasManagerSales = db
+    .prepare(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'manager_sales'"
+    )
+    .get();
+  if (!hasManagerSales) return;
+
+  const toSeconds = (value: string) =>
+    Date.parse(value.replace(" ", "T") + "Z") / 1000;
+  const managers = db
+    .prepare(
+      `SELECT p.id as partner_id, u.id as user_id FROM partners p
+       JOIN users u ON p.user_id = u.id WHERE u.role = 'manager'`
+    )
+    .all() as { partner_id: number; user_id: number }[];
+
+  for (const manager of managers) {
+    const loans = db
+      .prepare(
+        `SELECT id, amount, is_paid, created_at FROM loans
+         WHERE partner_id = ? AND order_id IS NULL AND created_at IS NOT NULL
+         ORDER BY id`
+      )
+      .all(manager.partner_id) as {
+      id: number;
+      amount: number;
+      is_paid: number;
+      created_at: string;
+    }[];
+    if (loans.length === 0) continue;
+    const sales = db
+      .prepare(
+        `SELECT id, sale_price, created_at FROM manager_sales
+         WHERE manager_id = ? AND created_at IS NOT NULL ORDER BY id`
+      )
+      .all(manager.user_id) as {
+      id: number;
+      sale_price: number;
+      created_at: string;
+    }[];
+
+    // Каждой перепродаже соответствует один займ, созданный в ту же секунду
+    const used = new Set<number>();
+    let paidOnResaleCents = 0;
+    for (const loan of loans) {
+      const loanTime = toSeconds(loan.created_at);
+      const match = sales
+        .filter(
+          (sale) =>
+            !used.has(sale.id) &&
+            Math.abs(toSeconds(sale.created_at) - loanTime) <= 2
+        )
+        .sort(
+          (a, b) =>
+            Math.abs(toSeconds(a.created_at) - loanTime) -
+              Math.abs(toSeconds(b.created_at) - loanTime) ||
+            Number(b.sale_price === loan.amount) -
+              Number(a.sale_price === loan.amount)
+        )[0];
+      if (!match) continue;
+      used.add(match.id);
+
+      const originalCents = Math.round(match.sale_price * 100);
+      const outstandingCents = loan.is_paid ? 0 : Math.round(loan.amount * 100);
+      paidOnResaleCents += Math.max(0, originalCents - outstandingCents);
+      db.prepare(
+        `UPDATE loans SET kind = 'manager_debt', is_paid = true,
+           description = COALESCE(description, 'Перепродажа: закрыто, менеджер должен только цену передачи')
+         WHERE id = ?`
+      ).run(loan.id);
+    }
+
+    // Деньги, уже внесенные по закрытым займам, гасят долг за товар (FIFO)
+    const debts = db
+      .prepare(
+        `SELECT id, amount FROM loans
+         WHERE partner_id = ? AND kind = 'manager_debt' AND is_paid = false
+         ORDER BY created_at, id`
+      )
+      .all(manager.partner_id) as { id: number; amount: number }[];
+    let creditCents = paidOnResaleCents;
+    for (const debt of debts) {
+      if (creditCents <= 0) break;
+      const debtCents = Math.round(debt.amount * 100);
+      if (creditCents >= debtCents) {
+        db.prepare("UPDATE loans SET is_paid = true WHERE id = ?").run(debt.id);
+        creditCents -= debtCents;
+      } else {
+        db.prepare("UPDATE loans SET amount = ? WHERE id = ?").run(
+          (debtCents - creditCents) / 100,
+          debt.id
+        );
+        creditCents = 0;
+      }
+    }
+    if (used.size > 0) {
+      console.log(
+        `Менеджер ${manager.user_id}: закрыто займов за перепродажу: ${used.size}, зачтено в долг за товар: $${(
+          (paidOnResaleCents - creditCents) /
+          100
+        ).toFixed(2)}`
+      );
+    }
+  }
+}
+
 export function initDatabase() {
+  // Каждый API-маршрут вызывает initDatabase при импорте — выполняем один раз
+  if (isInitialized) return;
+  isInitialized = true;
+
   // Безопасная миграция для добавления роли 'manager'
   try {
     // Проверяем, существует ли таблица users
@@ -285,12 +474,12 @@ export function initDatabase() {
 
   if (!hasNameColumn) {
     console.log("Добавляем колонку 'name' в таблицу partners...");
-    db.exec(`ALTER TABLE partners ADD COLUMN name TEXT`);
+    addColumnIfMissing(`ALTER TABLE partners ADD COLUMN name TEXT`);
   }
 
   if (!hasContactInfoColumn) {
     console.log("Добавляем колонку 'contact_info' в таблицу partners...");
-    db.exec(`ALTER TABLE partners ADD COLUMN contact_info TEXT`);
+    addColumnIfMissing(`ALTER TABLE partners ADD COLUMN contact_info TEXT`);
   }
 
   // Обновляем существующих партнеров, заполняя name и contact_info из users
@@ -415,17 +604,53 @@ export function initDatabase() {
       // Добавляем новые колонки если их нет
       if (!loanDateColumn) {
         console.log("Добавляем колонку 'loan_date' в таблицу loans...");
-        db.exec(`ALTER TABLE loans ADD COLUMN loan_date TEXT`);
+        addColumnIfMissing(`ALTER TABLE loans ADD COLUMN loan_date TEXT`);
       }
 
       if (!descriptionColumn) {
         console.log("Добавляем колонку 'description' в таблицу loans...");
-        db.exec(`ALTER TABLE loans ADD COLUMN description TEXT`);
+        addColumnIfMissing(`ALTER TABLE loans ADD COLUMN description TEXT`);
       }
     }
   } catch (error) {
     console.log("Ошибка при проверке схемы loans:", error);
   }
+
+  // Ремонт после старой миграции 'in_container': она переименовывала orders в
+  // orders_old и удаляла ее, а SQLite при переименовании переписал внешние
+  // ключи других таблиц на orders_old. В таких базах любая вставка продажи,
+  // займа или долга поставщика с order_id падает с "no such table: orders_old".
+  // Пересоздаем затронутые таблицы с исправленной схемой, сохраняя данные
+  repairOrdersOldReferences();
+
+  // Миграция: вид займа.
+  //   partner_loan — деньги, полученные от партнера или администратора
+  //                  (входят в баланс кассы, их нужно вернуть);
+  //   manager_debt — долг менеджера за переданный ему товар (деньги еще не
+  //                  получены, в баланс кассы не входят).
+  // Выполняется в IMMEDIATE-транзакции с повторной проверкой колонки, чтобы
+  // параллельные процессы сборки не провели пересчет долгов дважды
+  db.transaction(() => {
+    const loanColumns = db.pragma("table_info(loans)") as any[];
+    if (loanColumns.some((col) => col.name === "kind")) return;
+
+    console.log("Добавляем колонку 'kind' в таблицу loans...");
+    db.exec(
+      `ALTER TABLE loans ADD COLUMN kind TEXT NOT NULL DEFAULT 'partner_loan' CHECK (kind IN ('partner_loan', 'manager_debt'))`
+    );
+    // Займ менеджера с привязкой к заказу — это его долг за переданный товар
+    const reclassified = db
+      .prepare(
+        `UPDATE loans SET kind = 'manager_debt'
+         WHERE order_id IS NOT NULL AND partner_id IN (
+           SELECT p.id FROM partners p JOIN users u ON p.user_id = u.id
+           WHERE u.role = 'manager'
+         )`
+      )
+      .run();
+    console.log(`Займов менеджеров помечено как долг: ${reclassified.changes}`);
+    closeLegacyResaleLoans();
+  }).immediate();
 
   // Таблица продаж
   db.exec(`
@@ -441,6 +666,32 @@ export function initDatabase() {
       FOREIGN KEY (order_id) REFERENCES orders (id)
     )
   `);
+
+  // Миграция: продажа менеджеру хранит id менеджера. Раньше менеджер
+  // определялся только по buyer_name, поэтому переименование менеджера
+  // «теряло» его товар, а однофамильцы видели чужой склад.
+  // Существующие продажи связываем по долгу менеджера за тот же заказ
+  const salesColumns = db.pragma("table_info(sales)") as any[];
+  if (!salesColumns.some((col) => col.name === "manager_id")) {
+    console.log("Добавляем колонку 'manager_id' в таблицу sales...");
+    addColumnIfMissing(
+      `ALTER TABLE sales ADD COLUMN manager_id INTEGER REFERENCES users (id)`
+    );
+    db.prepare(
+      `UPDATE sales SET manager_id = (
+         SELECT u.id FROM users u
+         JOIN partners p ON p.user_id = u.id
+         JOIN loans l ON l.partner_id = p.id AND l.order_id = sales.order_id
+         WHERE u.role = 'manager' AND u.name = sales.buyer_name
+         LIMIT 1
+       )
+       WHERE manager_id IS NULL`
+    ).run();
+    const linked = db
+      .prepare("SELECT COUNT(*) as count FROM sales WHERE manager_id IS NOT NULL")
+      .get() as { count: number };
+    console.log(`Продажи, связанные с менеджерами: ${linked.count}`);
+  }
 
   // Таблица расходов (для отслеживания потраченных средств без изменения займов)
   db.exec(`
@@ -537,8 +788,12 @@ export function initDatabase() {
       // Отключаем foreign keys временно
       db.pragma("foreign_keys = OFF");
 
-      // Переименовываем старую таблицу
+      // Переименовываем старую таблицу. legacy_alter_table: иначе SQLite
+      // перепишет внешние ключи loans/sales/supplier_debts на orders_old,
+      // которая ниже удаляется, и все вставки в эти таблицы начнут падать
+      db.pragma("legacy_alter_table = ON");
       db.exec("ALTER TABLE orders RENAME TO orders_old");
+      db.pragma("legacy_alter_table = OFF");
 
       // Создаем новую таблицу с обновленным CHECK constraint
       db.exec(`
@@ -611,22 +866,70 @@ export function initDatabase() {
     console.log("Ошибка при миграции orders:", error);
   }
 
-  // Создаем администратора по умолчанию
+  // Миграция: операционные расходы заказа (погрузка и т. п.), добавленные
+  // через add-expense. Нужны при оплате займа, чтобы не терять их: вычислять
+  // их из total_price нельзя, если сумма заказа уменьшена долгом поставщика.
+  // Колонку добавляем после пересоздания orders выше, иначе она потеряется.
+  // Для заказов в займе расходы берем из уже записанных операций add-expense
+  db.transaction(() => {
+    const orderColumns = db.pragma("table_info(orders)") as any[];
+    if (orderColumns.some((col) => col.name === "extra_costs")) return;
+    db.exec(
+      "ALTER TABLE orders ADD COLUMN extra_costs REAL NOT NULL DEFAULT 0"
+    );
+    db.prepare(
+      `UPDATE orders SET extra_costs = COALESCE((
+         SELECT SUM(e.amount) FROM expenses e
+         WHERE e.type = 'order' AND e.related_id = orders.id AND e.amount > 0
+           AND e.description NOT LIKE 'Оплата займа за заказ%'
+       ), 0)
+       WHERE status = 'loan'`
+    ).run();
+  }).immediate();
+
+  // Создаем администратора по умолчанию.
+  // INSERT OR IGNORE: несколько процессов сборки могут дойти сюда одновременно
   const adminExists = db
     .prepare("SELECT id FROM users WHERE username = 'admin'")
     .get();
   if (!adminExists) {
-    const bcrypt = require("bcryptjs");
     const hashedPassword = bcrypt.hashSync("admin123", 10);
 
-    db.prepare(
-      `
-      INSERT INTO users (username, password, role, name, email)
+    const result = db
+      .prepare(
+        `
+      INSERT OR IGNORE INTO users (username, password, role, name, email)
       VALUES ('admin', ?, 'admin', 'Администратор', 'admin@drevmaster.com')
     `
-    ).run(hashedPassword);
+      )
+      .run(hashedPassword);
 
-    console.log("Создан пользователь admin с паролем: admin123");
+    if (result.changes > 0) {
+      console.log("Создан пользователь admin с паролем: admin123");
+    }
+  }
+}
+
+// Удаляет пользователя. Записи журнала остаются, но без привязки к нему.
+// Возвращает false, если у пользователя есть финансовая история (займы,
+// переводы, продажи) — такого пользователя можно только деактивировать
+export function deleteUserIfNoHistory(userId: number): boolean {
+  const remove = db.transaction(() => {
+    db.prepare("UPDATE activity_logs SET user_id = NULL WHERE user_id = ?").run(
+      userId
+    );
+    db.prepare(
+      "DELETE FROM partners WHERE user_id = ? AND id NOT IN (SELECT partner_id FROM loans)"
+    ).run(userId);
+    db.prepare("DELETE FROM users WHERE id = ?").run(userId);
+  });
+
+  try {
+    remove();
+    return true;
+  } catch (e: any) {
+    if (e?.code === "SQLITE_CONSTRAINT_FOREIGNKEY") return false;
+    throw e;
   }
 }
 

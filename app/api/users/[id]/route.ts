@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, initDatabase } from "@/lib/database";
+import { logActivity } from "@/lib/activity";
+import { requireActiveSession } from "@/lib/session";
+import { db, initDatabase, deleteUserIfNoHistory } from "@/lib/database";
 const bcrypt = require("bcryptjs");
 
 initDatabase();
@@ -8,110 +10,126 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const body = await request.json();
-    const { password, role, name, email, phone, currentPassword } = body;
+    const { password, name, email, phone, currentPassword, username } = body;
+    let { role } = body;
     const userId = parseInt(params.id);
 
-    // Для изменения пароля требуется только имя
-    // Для изменения роли требуется и роль и имя
-    if (role && !name) {
-      return NextResponse.json(
-        { error: "Роль и имя обязательны" },
-        { status: 400 }
-      );
+    // Администратор может менять любого пользователя,
+    // остальные — только свой профиль, без смены роли и логина
+    const isAdmin = session.role === "admin";
+    if (!isAdmin && session.userId !== userId) {
+      return NextResponse.json({ error: "Доступ запрещен" }, { status: 403 });
+    }
+    if (!isAdmin) {
+      role = undefined;
+      if (password && !currentPassword) {
+        return NextResponse.json(
+          { error: "Введите текущий пароль" },
+          { status: 400 }
+        );
+      }
     }
 
-    // Если изменяется только профиль (без роли), имя все равно требуется
     if (!name) {
       return NextResponse.json({ error: "Имя обязательно" }, { status: 400 });
     }
 
-    // Если изменяется пароль, проверяем текущий пароль (для безопасности)
-    if (password) {
-      if (currentPassword) {
-        // Проверяем текущий пароль
-        const getCurrentPassword = db.prepare(
-          "SELECT password FROM users WHERE id = ?"
-        );
-        const userResult = getCurrentPassword.get(userId) as
-          | { password: string }
-          | undefined;
+    const target = db
+      .prepare("SELECT id, username, role, password, is_active FROM users WHERE id = ?")
+      .get(userId) as
+      | { id: number; username: string; role: string; password: string; is_active: number }
+      | undefined;
+    if (!target) {
+      return NextResponse.json({ error: "Пользователь не найден" }, { status: 404 });
+    }
 
-        if (
-          !userResult ||
-          !bcrypt.compareSync(currentPassword, userResult.password)
-        ) {
-          return NextResponse.json(
-            { error: "Неверный текущий пароль" },
-            { status: 400 }
-          );
-        }
-      }
+    if (role && !["admin", "manager", "partner", "user"].includes(role)) {
+      return NextResponse.json({ error: "Неизвестная роль" }, { status: 400 });
+    }
 
-      const hashedPassword = bcrypt.hashSync(password, 10);
-
-      if (role) {
-        // Обновляем пароль и роль
-        const updateWithPassword = db.prepare(`
-          UPDATE users 
-          SET password = ?, role = ?, name = ?, email = ?, phone = ?
-          WHERE id = ?
-        `);
-        updateWithPassword.run(
-          hashedPassword,
-          role,
-          name,
-          email || null,
-          phone || null,
-          userId
+    // Нельзя снять роль администратора с последнего активного администратора
+    if (role && role !== "admin" && target.role === "admin") {
+      const admins = db
+        .prepare(
+          "SELECT COUNT(*) as count FROM users WHERE role = 'admin' AND is_active = true AND id != ?"
+        )
+        .get(userId) as { count: number };
+      // Считаем остальных активных администраторов: удалить или понизить
+      // уже деактивированного администратора можно
+      if (admins.count === 0) {
+        return NextResponse.json(
+          { error: "Нельзя снять роль с последнего администратора" },
+          { status: 400 }
         );
-      } else {
-        // Обновляем только пароль и профиль
-        const updatePasswordOnly = db.prepare(`
-          UPDATE users 
-          SET password = ?, name = ?, email = ?, phone = ?
-          WHERE id = ?
-        `);
-        updatePasswordOnly.run(
-          hashedPassword,
-          name,
-          email || null,
-          phone || null,
-          userId
-        );
-      }
-    } else {
-      if (role) {
-        // Обновляем роль и профиль без пароля
-        const updateWithoutPassword = db.prepare(`
-          UPDATE users 
-          SET role = ?, name = ?, email = ?, phone = ?
-          WHERE id = ?
-        `);
-        updateWithoutPassword.run(
-          role,
-          name,
-          email || null,
-          phone || null,
-          userId
-        );
-      } else {
-        // Обновляем только профиль
-        const updateProfileOnly = db.prepare(`
-          UPDATE users 
-          SET name = ?, email = ?, phone = ?
-          WHERE id = ?
-        `);
-        updateProfileOnly.run(name, email || null, phone || null, userId);
       }
     }
 
+    // Логин меняет только администратор; он должен быть уникальным
+    const newUsername =
+      isAdmin && typeof username === "string" && username.trim()
+        ? username.trim()
+        : target.username;
+    if (newUsername !== target.username) {
+      const taken = db
+        .prepare("SELECT id FROM users WHERE username = ? AND id != ?")
+        .get(newUsername, userId);
+      if (taken) {
+        return NextResponse.json(
+          { error: "Пользователь с таким логином уже существует" },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Смена пароля: текущий пароль проверяем, если он передан
+    // (администратор может задать новый пароль другому пользователю без него)
+    if (password && currentPassword && !bcrypt.compareSync(currentPassword, target.password)) {
+      return NextResponse.json({ error: "Неверный текущий пароль" }, { status: 400 });
+    }
+
+    const newRole = role || target.role;
+    db.transaction(() => {
+      db.prepare(
+        `UPDATE users SET username = ?, role = ?, name = ?, email = ?, phone = ?, password = ?
+         WHERE id = ?`
+      ).run(
+        newUsername,
+        newRole,
+        name,
+        email || null,
+        phone || null,
+        password ? bcrypt.hashSync(password, 10) : target.password,
+        userId
+      );
+
+      // У партнера должна быть запись в partners (займы, список партнеров).
+      // При смене роли на «Партнер» создаем ее; при смене роли с «Партнера»
+      // запись остается — на нее могут ссылаться займы
+      if (newRole === "partner") {
+        const existing = db
+          .prepare("SELECT id FROM partners WHERE user_id = ? AND id != 0")
+          .get(userId);
+        if (existing) {
+          db.prepare("UPDATE partners SET name = ? WHERE user_id = ? AND id != 0").run(name, userId);
+        } else {
+          db.prepare(
+            "INSERT INTO partners (user_id, name, contact_info, description) VALUES (?, ?, ?, ?)"
+          ).run(userId, name, email || phone || null, `Партнер: ${name}`);
+        }
+      }
+    })();
+
     // Возвращаем обновленные данные пользователя
-    const getUpdatedUser = db.prepare(
-      "SELECT id, username, role, name, email, phone, is_active, created_at FROM users WHERE id = ?"
-    );
-    const updatedUser = getUpdatedUser.get(userId);
+    const updatedUser = db
+      .prepare(
+        "SELECT id, username, role, name, email, phone, is_active, created_at FROM users WHERE id = ?"
+      )
+      .get(userId);
 
     return NextResponse.json(updatedUser);
   } catch (error) {
@@ -127,12 +145,15 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const userId = parseInt(params.id);
 
     // Проверяем что пользователь существует
     const user = db
-      .prepare("SELECT username, name FROM users WHERE id = ?")
+      .prepare("SELECT username, name, role FROM users WHERE id = ?")
       .get(userId) as any;
 
     if (!user) {
@@ -142,32 +163,43 @@ export async function DELETE(
       );
     }
 
-    // Нельзя удалить админа
-    if (user.username === "admin") {
+    // Нельзя удалить свою учетную запись и последнего администратора
+    if (userId === session.userId) {
       return NextResponse.json(
-        { error: "Нельзя удалить администратора" },
+        { error: "Нельзя удалить свою учетную запись" },
         { status: 400 }
       );
     }
+    if (user.role === "admin") {
+      const admins = db
+        .prepare(
+          "SELECT COUNT(*) as count FROM users WHERE role = 'admin' AND is_active = true AND id != ?"
+        )
+        .get(userId) as { count: number };
+      // Считаем остальных активных администраторов: удалить или понизить
+      // уже деактивированного администратора можно
+      if (admins.count === 0) {
+        return NextResponse.json(
+          { error: "Нельзя удалить последнего администратора" },
+          { status: 400 }
+        );
+      }
+    }
 
     // Удаляем пользователя
-    const deleteUser = db.prepare("DELETE FROM users WHERE id = ?");
-    const result = deleteUser.run(userId);
-
-    if (result.changes === 0) {
+    if (!deleteUserIfNoHistory(userId)) {
       return NextResponse.json(
-        { error: "Пользователь не найден" },
-        { status: 404 }
+        {
+          error:
+            "У пользователя есть финансовая история (займы, переводы или продажи). Деактивируйте его вместо удаления",
+        },
+        { status: 400 }
       );
     }
 
     // Логируем активность
     try {
-      const insertLog = db.prepare(`
-        INSERT INTO activity_logs (user_id, action, entity_type, details)
-        VALUES (1, 'удален', 'user', ?)
-      `);
-      insertLog.run(`Удален пользователь: ${user.name} (${user.username})`);
+      logActivity(session.userId, "удален", "user", `Удален пользователь: ${user.name} (${user.username})`);
     } catch (logError) {
       console.error("Ошибка логирования:", logError);
     }

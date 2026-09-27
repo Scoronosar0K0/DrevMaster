@@ -1,175 +1,105 @@
 # Ручное обновление сервера
 
-## 🔧 Проблема с аутентификацией на VPS
+Обычно достаточно `./update-server.sh` (или `./deploy.sh` при первой установке).
+Ниже — те же шаги вручную и диагностика.
 
-Если вы постоянно перенаправляетесь на страницу логина после успешного входа, выполните следующие шаги:
+> Не храните пароли, ключи и токены в репозитории: он публичный.
+> Для входа на сервер используйте SSH-ключ (`ssh-copy-id root@<IP>`),
+> а вход по паролю отключите (`PasswordAuthentication no` в
+> `/etc/ssh/sshd_config`, затем `systemctl restart ssh`).
 
-### 1. Подключение к серверу
+## Где что лежит
+
+| Что | Путь |
+| --- | --- |
+| Код приложения | `/var/www/drevmaster/drevmaster` |
+| База данных | `/var/lib/drevmaster/drevmaster.db` (путь задан в `DATABASE_PATH`) |
+| Настройки (`JWT_SECRET`, `DATABASE_PATH`) | `/var/lib/drevmaster/.env.local` (`deploy.sh` копирует его в папку кода) |
+| Резервные копии базы | `/var/lib/drevmaster/backups` |
+| Процесс | `pm2`, имя `drevmaster` |
+
+## 1. Подключение к серверу
 
 ```bash
 ssh root@194.87.201.205
-# Пароль: sPCTXxCd5gfR+L
 ```
 
-### 2. Обновление приложения
+## 2. Обновление приложения
 
 ```bash
-# Переходим в директорию приложения
-cd /var/www/DREVMASTER/DREVMASTER
+cd /var/www/drevmaster/drevmaster
 
-# Получаем последние изменения
+# Резервная копия базы перед обновлением
+mkdir -p /var/lib/drevmaster/backups
+cp /var/lib/drevmaster/drevmaster.db \
+   /var/lib/drevmaster/backups/drevmaster-$(date +%Y%m%d-%H%M%S).db
+
 git pull origin main
-
-# Устанавливаем зависимости
+cp /var/lib/drevmaster/.env.local .env.local   # настройки берем из постоянной копии
 npm install
-
-# Собираем приложение
-npm run build
-
-# Перезапускаем приложение
-pm2 restart DREVMASTER
+npm run build          # миграции базы выполняются автоматически
+pm2 restart drevmaster
 ```
 
-### 2.1 ИСПРАВЛЕНИЕ ТАБЛИЦЫ ACTIVITY_LOGS
+Удалять базу при обновлении не нужно: схема обновляется сама при запуске,
+данные сохраняются.
 
-Если в логах видите "Таблица activity_logs еще не создана", выполните:
-
-```bash
-# Остановить приложение
-pm2 stop DREVMASTER
-
-# Удалить старую базу данных (ВНИМАНИЕ: Это удалит все данные!)
-rm -f drevmaster.db
-
-# Запустить приложение заново (база создастся с нуля)
-pm2 start DREVMASTER
-
-# Проверить логи
-pm2 logs DREVMASTER --lines 20
-```
-
-**АЛЬТЕРНАТИВНО** (если не хотите потерять данные):
+## 3. Проверка настроек
 
 ```bash
-# Подключиться к базе данных SQLite
-sqlite3 DREVMASTER.db
-
-# Создать таблицу activity_logs вручную
-CREATE TABLE IF NOT EXISTS activity_logs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER,
-  action TEXT NOT NULL,
-  entity_type TEXT NOT NULL,
-  details TEXT,
-  created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (user_id) REFERENCES users (id)
-);
-
-# Выйти из SQLite
-.quit
-
-# Перезапустить приложение
-pm2 restart DREVMASTER
-```
-
-### 3. Проверка настроек
-
-```bash
-# Проверяем файл окружения
-cat .env.local
-
+cat /var/lib/drevmaster/.env.local
 # Должно содержать:
-# JWT_SECRET=DREVMASTER-secret-key-2024
+# JWT_SECRET=<случайная строка из openssl rand -hex 32>
+# DATABASE_PATH=/var/lib/drevmaster/drevmaster.db
 # NODE_ENV=production
 # PORT=3000
 
-# Проверяем статус приложения
 pm2 status
-
-# Проверяем логи
-pm2 logs DREVMASTER --lines 20
+pm2 logs drevmaster --lines 50
 ```
 
-### 4. Проверка Nginx
+## 4. Проверка Nginx
 
 ```bash
-# Проверяем статус Nginx
 systemctl status nginx
-
-# Проверяем конфигурацию
 nginx -t
-
-# Перезапускаем Nginx если нужно
 systemctl restart nginx
 ```
 
-### 5. Проверка портов
+## 5. Проверка портов
 
 ```bash
-# Проверяем какие порты слушаются
 netstat -tlnp | grep :80
 netstat -tlnp | grep :3000
 ```
 
-### 6. Очистка кэша браузера
-
-Если проблема остается:
-
-1. Откройте DevTools (F12)
-2. Перейдите на вкладку Application/Storage
-3. Очистите все cookies и localStorage
-4. Попробуйте войти снова
-
-### 7. Проверка базы данных
+## 6. Восстановление базы из резервной копии
 
 ```bash
-# Проверяем что база данных существует
-ls -la *.db
-
-# Если базы нет, перезапустите приложение
-pm2 restart DREVMASTER
+pm2 stop drevmaster
+ls -lt /var/lib/drevmaster/backups | head
+cp /var/lib/drevmaster/backups/<файл>.db /var/lib/drevmaster/drevmaster.db
+pm2 start drevmaster
 ```
 
-### 8. Альтернативное решение
+## 🔍 Диагностика входа
 
-Если проблема не решается, попробуйте:
+Если после входа снова открывается страница логина:
 
-```bash
-# Остановить приложение
-pm2 stop DREVMASTER
-
-# Удалить старую базу данных
-rm -f *.db
-
-# Запустить приложение заново
-pm2 start DREVMASTER
-
-# Проверить логи
-pm2 logs DREVMASTER
-```
-
-## 🔍 Диагностика
-
-### Проверка cookie в браузере:
-
-1. Откройте DevTools (F12)
-2. Перейдите на вкладку Application/Storage
-3. В разделе Cookies найдите `auth-token`
-4. Убедитесь что cookie установлен и не истек
-
-### Проверка JWT токена:
-
-1. Скопируйте значение cookie `auth-token`
-2. Перейдите на https://jwt.io/
-3. Вставьте токен и проверьте его структуру
-4. Убедитесь что поле `role` содержит правильное значение
+1. Очистите cookies и localStorage сайта (DevTools → Application) и войдите снова.
+2. Проверьте, что `JWT_SECRET` задан в `.env.local` и не менялся между сборкой
+   и запуском (после смены секрета все пользователи должны войти заново).
+3. Сайт работает по HTTP — cookie ставится без флага Secure автоматически.
+   Если перед сервером стоит HTTPS-прокси, он должен передавать
+   `X-Forwarded-Proto`.
+4. Деактивированный или удаленный пользователь выходит из системы при
+   следующем запросе — это ожидаемо.
 
 ## 📞 Если ничего не помогает
 
-1. Проверьте логи приложения: `pm2 logs DREVMASTER`
-2. Проверьте логи Nginx: `tail -f /var/log/nginx/error.log`
-3. Убедитесь что JWT_SECRET одинаковый в `.env.local` и в коде
-4. Попробуйте перезапустить весь сервер: `reboot`
+1. Логи приложения: `pm2 logs drevmaster`
+2. Логи Nginx: `tail -f /var/log/nginx/error.log`
+3. Перезапуск: `pm2 restart drevmaster`
 
 ---
 
