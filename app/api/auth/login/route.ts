@@ -16,12 +16,26 @@ const failures = new Map<string, { count: number; since: number }>();
 // столько же времени, сколько для неверного пароля (не выдаем, какие логины есть)
 const DUMMY_HASH = bcrypt.hashSync("drevmaster-timing-dummy", 10);
 
+// Адрес клиента берем из заголовков, которые выставляет nginx (deploy.sh):
+// X-Real-IP он перезаписывает, а к X-Forwarded-For дописывает адрес в конец.
+// Первые элементы X-Forwarded-For присылает сам клиент — по ним ключ можно
+// было бы менять на каждом запросе и обходить ограничение
 function throttleKey(request: NextRequest, username: string) {
+  const forwarded = request.headers.get("x-forwarded-for")?.split(",");
   const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
-    request.headers.get("x-real-ip") ||
+    request.headers.get("x-real-ip")?.trim() ||
+    forwarded?.[forwarded.length - 1]?.trim() ||
     "local";
   return `${ip}|${String(username).toLowerCase()}`;
+}
+
+// Удаляем устаревшие записи, чтобы карта не росла без ограничений
+function pruneFailures() {
+  if (failures.size < 1000) return;
+  const now = Date.now();
+  failures.forEach((entry, key) => {
+    if (now - entry.since > WINDOW_MS) failures.delete(key);
+  });
 }
 
 function isThrottled(key: string) {
@@ -35,6 +49,7 @@ function isThrottled(key: string) {
 }
 
 function recordFailure(key: string) {
+  pruneFailures();
   const entry = failures.get(key);
   if (!entry || Date.now() - entry.since > WINDOW_MS) {
     failures.set(key, { count: 1, since: Date.now() });

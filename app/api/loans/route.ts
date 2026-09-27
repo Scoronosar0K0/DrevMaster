@@ -31,6 +31,7 @@ export async function GET(request: NextRequest) {
         CASE
           WHEN l.kind = 'manager_debt' THEN 'manager'
           WHEN l.partner_id = 0 THEN 'admin'
+          WHEN u.role = 'manager' THEN 'partner'
           ELSE u.role
         END as partner_role,
         o.order_number

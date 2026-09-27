@@ -55,9 +55,13 @@ export async function PUT(
     // Нельзя снять роль администратора с последнего активного администратора
     if (role && role !== "admin" && target.role === "admin") {
       const admins = db
-        .prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin' AND is_active = true")
-        .get() as { count: number };
-      if (admins.count <= 1) {
+        .prepare(
+          "SELECT COUNT(*) as count FROM users WHERE role = 'admin' AND is_active = true AND id != ?"
+        )
+        .get(userId) as { count: number };
+      // Считаем остальных активных администраторов: удалить или понизить
+      // уже деактивированного администратора можно
+      if (admins.count === 0) {
         return NextResponse.json(
           { error: "Нельзя снять роль с последнего администратора" },
           { status: 400 }
@@ -168,9 +172,13 @@ export async function DELETE(
     }
     if (user.role === "admin") {
       const admins = db
-        .prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin' AND is_active = true")
-        .get() as { count: number };
-      if (admins.count <= 1) {
+        .prepare(
+          "SELECT COUNT(*) as count FROM users WHERE role = 'admin' AND is_active = true AND id != ?"
+        )
+        .get(userId) as { count: number };
+      // Считаем остальных активных администраторов: удалить или понизить
+      // уже деактивированного администратора можно
+      if (admins.count === 0) {
         return NextResponse.json(
           { error: "Нельзя удалить последнего администратора" },
           { status: 400 }

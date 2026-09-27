@@ -137,7 +137,10 @@ export default function ManagersPage() {
         fetchTransfers(); // Обновляем список
         fetchManagers(); // Долг менеджера изменился
       } else {
-        notify.error("Ошибка при обработке перевода");
+        // Сервер объясняет, почему перевод нельзя одобрить (например, долг
+        // компании перед партнером меньше суммы перевода)
+        const data = await response.json().catch(() => ({}));
+        notify.error(data.error || "Ошибка при обработке перевода");
       }
     } catch (error) {
       console.error("Ошибка при обработке перевода:", error);

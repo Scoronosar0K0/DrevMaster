@@ -23,9 +23,12 @@ interface Loan {
   description?: string;
   // 'manager' — менеджер должен нам за товар; иначе займ, который мы возвращаем
   partner_role?: string;
+  kind?: "partner_loan" | "manager_debt";
 }
 
-const isManagerDebt = (loan: Loan) => loan.partner_role === "manager";
+// Направление денег определяет вид займа (как и на сервере), а не текущая
+// роль пользователя: роль могла смениться после выдачи займа
+const isManagerDebt = (loan: Loan) => loan.kind === "manager_debt";
 
 export default function CashPage() {
   const [partners, setPartners] = useState<Partner[]>([]);
@@ -262,13 +265,13 @@ export default function CashPage() {
     // Полная оплата. Для долга менеджера это получение денег от него,
     // для займа партнера — возврат денег из кассы
     const loan = loans.find((l) => l.id === loanId);
-    const isManagerDebt = loan?.partner_role === "manager";
+    const managerDebt = !!loan && isManagerDebt(loan);
     if (
       !(await confirmAction(
-        isManagerDebt
+        managerDebt
           ? `Отметить, что менеджер заплатил ${formatMoney(loan?.amount)}? Сумма поступит в кассу.`
           : `Вернуть партнеру ${formatMoney(loan?.amount)} из кассы?`,
-        { confirmText: isManagerDebt ? "Получено" : "Вернуть" }
+        { confirmText: managerDebt ? "Получено" : "Вернуть" }
       ))
     )
       return;
@@ -491,7 +494,7 @@ export default function CashPage() {
                             onClick={() => payLoan(loan.id, true)}
                             className="btn border-amber-300 bg-white px-3 py-1.5 text-xs text-amber-700 hover:bg-amber-50 focus-visible:ring-amber-400"
                           >
-                            {loan.partner_role === "manager"
+                            {isManagerDebt(loan)
                               ? "Получено частично"
                               : "Вернуть частично"}
                           </button>
@@ -500,7 +503,7 @@ export default function CashPage() {
                             onClick={() => payLoan(loan.id, false)}
                             className="btn btn-success px-3 py-1.5 text-xs"
                           >
-                            {loan.partner_role === "manager"
+                            {isManagerDebt(loan)
                               ? "Получено полностью"
                               : "Вернуть полностью"}
                           </button>

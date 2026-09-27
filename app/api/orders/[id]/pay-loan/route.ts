@@ -58,13 +58,11 @@ export async function POST(
 
     // Операционные расходы, уже добавленные к заказу (погрузка и т. п.),
     // входят в total_price сверх цены товара. При оплате займа их нельзя терять:
-    // переносим их в оплаченный заказ пропорционально объему
-    const basePricePerUnit =
-      order.price_per_unit != null
-        ? order.price_per_unit
-        : (order.total_price || 0) / order.value;
-    const rawExtras = (order.total_price || 0) - order.value * basePricePerUnit;
-    const extras = rawExtras > 0.005 ? rawExtras : 0;
+    // переносим их в оплаченный заказ пропорционально объему. Берем их из
+    // extra_costs, а не из total_price: сумма заказа могла быть уменьшена
+    // или увеличена долгом поставщика
+    const extras = Math.max(0, Number(order.extra_costs) || 0);
+    const paidExtras = isPartialPayment ? (extras * paidValue) / order.value : extras;
 
     // Баланс кассы без долга менеджеров (см. lib/balance.ts)
     const currentBalance = getCashBalance();
@@ -111,7 +109,7 @@ export async function POST(
               container_loads = ?
           WHERE id = ?
         `);
-        update.run(totalCost + extras, JSON.stringify(containerData), orderId);
+        update.run(totalCost + paidExtras, JSON.stringify(containerData), orderId);
       } else {
         // Частичная оплата — разделяем заказ, как при создании контейнера:
         // оплаченные контейнеры становятся новым заказом, остаток остается в займе
@@ -132,8 +130,8 @@ export async function POST(
           `Оплачено из займа ${order.order_number}`,
           order.measurement,
           paidValue,
-          (totalCost + (extras * paidValue) / order.value) / paidValue,
-          totalCost + (extras * paidValue) / order.value,
+          (totalCost + paidExtras) / paidValue,
+          totalCost + paidExtras,
           containers.length,
           JSON.stringify(containerData)
         );
@@ -159,12 +157,14 @@ export async function POST(
         db.prepare(
           `
           UPDATE orders 
-          SET value = ?, total_price = ?, containers = ?, container_loads = ?
+          SET value = ?, total_price = ?, containers = ?, container_loads = ?,
+              extra_costs = ?
           WHERE id = ?
         `
         ).run(
           remainingValue,
           remainingPrice,
+          extras - paidExtras,
           Math.max(1, (order.containers || 1) - containers.length),
           remainingLoads,
           orderId

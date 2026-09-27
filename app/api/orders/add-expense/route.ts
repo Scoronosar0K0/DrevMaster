@@ -41,13 +41,15 @@ export async function POST(request: NextRequest) {
       `);
       insertExpense.run(amount, description || `Операционный расход для заказа ${order.order_number}`, order_id);
 
-      // Увеличиваем общую стоимость заказа
+      // Увеличиваем общую стоимость заказа и отдельно запоминаем расход:
+      // при оплате займа он переносится в оплаченный заказ
       const updateOrder = db.prepare(`
         UPDATE orders 
-        SET total_price = COALESCE(total_price, 0) + ?
+        SET total_price = COALESCE(total_price, 0) + ?,
+            extra_costs = COALESCE(extra_costs, 0) + ?
         WHERE id = ?
       `);
-      updateOrder.run(amount, order_id);
+      updateOrder.run(amount, amount, order_id);
 
       // Логируем активность
       logActivity(session.userId, "увеличение_цены_заказа", "order", `Добавлен операционный расход $${amount} к заказу ${order.order_number}${description ? `: ${description}` : ''}`);

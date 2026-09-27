@@ -108,9 +108,10 @@ export default function ManagerTransfersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...transferForm,
+          // Для перевода в компанию администратора выбирает сервер
           to_user_id:
             transferForm.to_user_type === "admin"
-              ? 1
+              ? undefined
               : parseInt(transferForm.to_user_id),
         }),
       });

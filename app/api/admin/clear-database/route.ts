@@ -67,18 +67,22 @@ export async function POST(request: NextRequest) {
         `UPDATE sqlite_sequence SET seq = 0 WHERE name IN (${tableNames})`
       ).run();
 
-      // Создаем администратора с id 1 и тем же паролем, которым только что
-      // подтвердили очистку (а не с известным паролем "admin"). Ошибку здесь
+      // Создаем администратора с тем же паролем, которым только что
+      // подтвердили очистку (а не с известным паролем "admin"). Id берем новый
+      // из счетчика: с прежним id (например, 1) снова заработали бы старые
+      // токены удаленных или деактивированных пользователей. Ошибку здесь
       // не глушим: без администратора в систему нельзя будет войти
-      db.prepare(
-        `
-        INSERT INTO users (id, username, password, role, name, email, is_active)
-        VALUES (1, 'admin', ?, 'admin', 'Администратор', 'admin@drevmaster.com', true)
+      const newAdmin = db
+        .prepare(
+          `
+        INSERT INTO users (username, password, role, name, email, is_active)
+        VALUES ('admin', ?, 'admin', 'Администратор', 'admin@drevmaster.com', true)
       `
-      ).run(admin.password);
+        )
+        .run(admin.password);
 
       logActivity(
-        1,
+        Number(newAdmin.lastInsertRowid),
         "очистка_бд",
         "system",
         "База данных была полностью очищена и создан новый администратор"

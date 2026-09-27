@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { logActivity } from "@/lib/activity";
+import { resolveTransferRecipient } from "@/lib/transfers";
 import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
 
@@ -65,25 +66,19 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { to_user_id, amount, description } = body;
+    const { amount, description } = body;
 
-    if (!to_user_id || !(Number.isFinite(amount) && amount > 0)) {
+    if (!(Number.isFinite(amount) && amount > 0)) {
       return NextResponse.json(
-        { error: "Получатель и сумма обязательны" },
+        { error: "Укажите сумму больше нуля" },
         { status: 400 }
       );
     }
 
-    // Получатель — администратор (деньги в кассу) или активный партнер
-    // (менеджер заплатил партнеру в счет его займа)
-    const recipient = db
-      .prepare(
-        "SELECT id, name FROM users WHERE id = ? AND is_active = true AND role IN ('admin', 'partner')"
-      )
-      .get(to_user_id);
+    const recipient = resolveTransferRecipient(body);
     if (!recipient) {
       return NextResponse.json(
-        { error: "Получатель не найден" },
+        { error: "Получатель не найден или неактивен" },
         { status: 404 }
       );
     }
@@ -96,14 +91,14 @@ export async function POST(request: NextRequest) {
 
     const result = insertTransfer.run(
       userId,
-      to_user_id,
+      recipient.id,
       amount,
       description || null
     );
 
     // Логируем активность
     logActivity(session.userId, "заявка_на_перевод", "transfer", `Создана заявка на перевод $${amount} пользователю ${
-        (recipient as any).name
+        recipient.name
       }`);
 
     return NextResponse.json({

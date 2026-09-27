@@ -80,7 +80,7 @@ export default function ManagerTransfersPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          to_user_id: 1, // ID администратора
+          to_user_type: "admin", // администратора выбирает сервер
           amount: transferForm.amount,
           description: transferForm.description,
         }),
