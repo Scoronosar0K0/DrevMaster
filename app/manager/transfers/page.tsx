@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Icon from "@/components/Icon";
+import { PageHeader } from "@/components/ui";
+import { formatDate, formatMoney } from "@/lib/format";
 
 interface Transfer {
   id: number;
@@ -80,137 +83,127 @@ export default function ManagerTransfersPage() {
     }
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("ru-RU");
-  };
-
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-lg">Загрузка...</div>
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <div className="flex items-center justify-center py-24 text-ink-500">
+          <span className="loading-spinner mr-3 text-brand-600" />
+          <span className="text-sm">Загрузка...</span>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Заголовок */}
-      <div className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-6">
-            <div>
-              <button
-                onClick={() => router.push("/manager")}
-                className="text-blue-600 hover:text-blue-800 mb-2"
-              >
-                ← Назад к панели
-              </button>
-              <h1 className="text-3xl font-bold text-gray-900">Переводы</h1>
-              <p className="text-gray-600">Отправка денег администратору</p>
-            </div>
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      <PageHeader
+        title="Переводы"
+        description="Отправка денег администратору"
+        actions={
+          <>
+            <button
+              onClick={() => router.push("/manager")}
+              className="btn btn-secondary"
+            >
+              Назад
+            </button>
             <button
               onClick={() => setShowTransferForm(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition duration-200"
+              className="btn btn-primary"
             >
+              <Icon name="plus" className="h-4 w-4" />
               Отправить деньги
             </button>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
-      {/* Основной контент */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* История переводов */}
-        <div className="bg-white shadow overflow-hidden sm:rounded-md">
-          <div className="px-4 py-5 sm:px-6">
-            <h3 className="text-lg leading-6 font-medium text-gray-900">
-              История переводов
-            </h3>
-            <p className="mt-1 max-w-2xl text-sm text-gray-500">
-              Все ваши заявки на переводы администратору
-            </p>
-          </div>
-          <div className="bg-white">
-            {transfers.length === 0 ? (
-              <div className="px-4 py-5 sm:px-6 text-center text-gray-500">
-                У вас пока нет переводов
-              </div>
-            ) : (
-              <div className="overflow-hidden">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Получатель
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Сумма
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Описание
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Дата
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Статус
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {transfers.map((transfer) => (
-                      <tr key={transfer.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {transfer.to_user_name}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          ${transfer.amount.toFixed(2)}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
-                          {transfer.description || "—"}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {formatDate(transfer.created_at)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span
-                            className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                              transfer.status === "pending"
-                                ? "bg-yellow-100 text-yellow-800"
-                                : transfer.status === "approved"
-                                ? "bg-green-100 text-green-800"
-                                : "bg-red-100 text-red-800"
-                            }`}
-                          >
-                            {transfer.status === "pending"
-                              ? "Ожидает"
-                              : transfer.status === "approved"
-                              ? "Одобрен"
-                              : "Отклонен"}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+      {/* История переводов */}
+      <section className="card overflow-hidden">
+        <div className="card-header">
+          <h2 className="text-base font-semibold text-ink-900">
+            История переводов
+          </h2>
+          <p className="mt-0.5 text-sm text-ink-500">
+            Все ваши заявки на переводы администратору
+          </p>
         </div>
-      </div>
+        {transfers.length === 0 ? (
+          <div className="px-6 py-12 text-center text-sm text-ink-500">
+            У вас пока нет переводов
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead>
+                <tr>
+                  <th className="table-header">Получатель</th>
+                  <th className="table-header text-right">Сумма</th>
+                  <th className="table-header">Описание</th>
+                  <th className="table-header">Дата</th>
+                  <th className="table-header">Статус</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-ink-100">
+                {transfers.map((transfer) => (
+                  <tr key={transfer.id} className="hover:bg-ink-50">
+                    <td className="table-cell">{transfer.to_user_name}</td>
+                    <td className="table-cell text-right font-medium">
+                      {formatMoney(transfer.amount)}
+                    </td>
+                    <td className="max-w-xs truncate px-6 py-4 text-sm text-ink-500">
+                      {transfer.description || "—"}
+                    </td>
+                    <td className="table-cell text-ink-500">
+                      {formatDate(transfer.created_at)}
+                    </td>
+                    <td className="table-cell">
+                      <span
+                        className={`status-badge ${
+                          transfer.status === "pending"
+                            ? "status-warning"
+                            : transfer.status === "approved"
+                            ? "status-success"
+                            : "status-danger"
+                        }`}
+                      >
+                        {transfer.status === "pending"
+                          ? "Ожидает"
+                          : transfer.status === "approved"
+                          ? "Одобрен"
+                          : "Отклонен"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       {/* Диалог создания перевода */}
       {showTransferForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4">
+          <div className="w-full max-w-md rounded-xl border border-ink-200 bg-white shadow-xl">
             <div className="p-6">
-              <h3 className="text-lg font-bold mb-4">
-                Отправить деньги администратору
-              </h3>
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <h3 className="text-lg font-semibold text-ink-900">
+                  Отправить деньги администратору
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowTransferForm(false)}
+                  className="rounded-lg p-1 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-600"
+                  aria-label="Закрыть"
+                >
+                  <Icon name="close" className="h-5 w-5" />
+                </button>
+              </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="mb-1 block text-sm font-medium text-ink-700">
                     Сумма ($) *
                   </label>
                   <input
@@ -225,13 +218,13 @@ export default function ManagerTransfersPage() {
                         amount: parseFloat(e.target.value) || 0,
                       })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="input-field"
                     placeholder="0.00"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="mb-1 block text-sm font-medium text-ink-700">
                     Описание
                   </label>
                   <textarea
@@ -243,22 +236,19 @@ export default function ManagerTransfersPage() {
                       })
                     }
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="input-field"
                     placeholder="Причина перевода (необязательно)"
                   />
                 </div>
 
-                <div className="flex space-x-3 mt-6">
-                  <button
-                    type="submit"
-                    className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition duration-200"
-                  >
+                <div className="mt-6 flex gap-3">
+                  <button type="submit" className="btn btn-primary flex-1">
                     Отправить заявку
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowTransferForm(false)}
-                    className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-400 transition duration-200"
+                    className="btn btn-secondary flex-1"
                   >
                     Отмена
                   </button>

@@ -41,18 +41,28 @@ export async function GET(request: NextRequest) {
       )
       .get(userId) as { totalDebt: number | null };
 
-    // Получаем количество товаров на складе (неоплаченные займы менеджера)
+    // Количество позиций на складе менеджера — по тем же условиям, что и
+    // /api/manager/warehouse: товар остается на складе, пока не перепродан,
+    // даже если менеджер уже рассчитался за него
     const warehouseResult = db
       .prepare(
         `
-        SELECT COUNT(*) as totalItems 
-        FROM loans l
+        SELECT COUNT(DISTINCT s.id) as totalItems
+        FROM sales s
+        JOIN loans l ON l.order_id = s.order_id
         JOIN partners p ON l.partner_id = p.id
+        LEFT JOIN (
+          SELECT related_sale_id, SUM(sale_value) as total_sold
+          FROM manager_sales
+          WHERE manager_id = ?
+          GROUP BY related_sale_id
+        ) sold_sum ON s.id = sold_sum.related_sale_id
         WHERE p.user_id = ?
-        AND l.is_paid = false
+        AND s.buyer_name = (SELECT name FROM users WHERE id = ?)
+        AND (s.sale_value - COALESCE(sold_sum.total_sold, 0)) > 0
       `
       )
-      .get(userId) as { totalItems: number };
+      .get(userId, userId, userId) as { totalItems: number };
 
     // Получаем количество ожидающих переводов
     const transfersResult = db

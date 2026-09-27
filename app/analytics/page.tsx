@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { PageHeader, StatCard } from "@/components/ui";
+import { formatDateTime, formatMoney } from "@/lib/format";
 
 interface AnalyticsData {
   totalRevenue: number;
@@ -68,10 +70,10 @@ export default function AnalyticsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="mx-auto flex min-h-[60vh] max-w-7xl items-center justify-center px-4">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Загрузка аналитики...</p>
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-ink-200 border-t-brand-600"></div>
+          <p className="mt-3 text-sm text-ink-500">Загрузка аналитики...</p>
         </div>
       </div>
     );
@@ -79,30 +81,26 @@ export default function AnalyticsPage() {
 
   if (!data) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-gray-600">Ошибка загрузки данных аналитики</p>
-        </div>
+      <div className="mx-auto flex min-h-[60vh] max-w-7xl items-center justify-center px-4">
+        <p className="text-sm text-ink-500">Ошибка загрузки данных аналитики</p>
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {/* Заголовок */}
-        <div className="mb-6 sm:mb-8 flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
-              📊 Аналитика и Отчеты
-            </h1>
-            <p className="text-sm sm:text-base text-gray-600">
-              Детальная аналитика бизнеса
-            </p>
-          </div>
+  // Шкала для полос по месяцам: максимум из выручки и расходов
+  const maxMonthly = Math.max(
+    1,
+    ...data.monthlyRevenue.flatMap((m) => [m.revenue || 0, m.expenses || 0])
+  );
 
-          {/* Выбор периода */}
-          <div className="flex space-x-2">
+  return (
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      <PageHeader
+        title="Аналитика и отчеты"
+        description="Детальная аналитика бизнеса"
+        actions={
+          /* Выбор периода */
+          <div className="inline-flex rounded-lg border border-ink-200 bg-white p-0.5">
             {[
               { value: "month", label: "Месяц" },
               { value: "quarter", label: "Квартал" },
@@ -111,242 +109,226 @@ export default function AnalyticsPage() {
               <button
                 key={period.value}
                 onClick={() => setSelectedPeriod(period.value)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                   selectedPeriod === period.value
-                    ? "bg-blue-600 text-white"
-                    : "bg-white text-gray-700 hover:bg-gray-100"
+                    ? "bg-ink-900 text-white"
+                    : "text-ink-600 hover:text-ink-900"
                 }`}
               >
                 {period.label}
               </button>
             ))}
           </div>
-        </div>
+        }
+      />
 
-        {/* Основные показатели */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
-          <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl p-6 text-white">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-green-100 text-sm">Выручка</p>
-                <p className="text-2xl font-bold">
-                  ${data.totalRevenue.toLocaleString()}
-                </p>
-              </div>
-              <div className="text-3xl">💰</div>
-            </div>
-          </div>
+      {/* Основные показатели */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          label="Выручка"
+          value={formatMoney(data.totalRevenue)}
+          icon="trendUp"
+          tone="positive"
+        />
+        <StatCard
+          label="Расходы"
+          value={formatMoney(data.totalExpenses)}
+          icon="wallet"
+          tone="negative"
+        />
+        <StatCard
+          label="Прибыль"
+          value={
+            <span className={data.profit < 0 ? "text-red-600" : undefined}>
+              {formatMoney(data.profit)}
+            </span>
+          }
+          hint="Выручка минус все расходы, включая закупку непроданного товара"
+          icon="chart"
+          tone={data.profit < 0 ? "negative" : "positive"}
+        />
+        <StatCard
+          label="Заказов"
+          value={data.ordersCount}
+          icon="cube"
+          tone="neutral"
+        />
+      </div>
 
-          <div className="bg-gradient-to-r from-red-500 to-pink-600 rounded-xl p-6 text-white">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-red-100 text-sm">Расходы</p>
-                <p className="text-2xl font-bold">
-                  ${data.totalExpenses.toLocaleString()}
-                </p>
-              </div>
-              <div className="text-3xl">📉</div>
-            </div>
-          </div>
-
-          <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl p-6 text-white">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-blue-100 text-sm">Прибыль</p>
-                <p className="text-2xl font-bold">
-                  ${data.profit.toLocaleString()}
-                </p>
-              </div>
-              <div className="text-3xl">📈</div>
-            </div>
-          </div>
-
-          <div className="bg-gradient-to-r from-purple-500 to-violet-600 rounded-xl p-6 text-white">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-purple-100 text-sm">Заказов</p>
-                <p className="text-2xl font-bold">{data.ordersCount}</p>
-              </div>
-              <div className="text-3xl">📦</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Графики и таблицы */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Месячная выручка */}
-          <div className="bg-white rounded-xl p-6 shadow-lg">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">
+      {/* Графики и таблицы */}
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* Месячная выручка */}
+        <section className="card">
+          <div className="flex items-center justify-between gap-3 border-b border-ink-100 px-5 py-4">
+            <h2 className="text-base font-semibold text-ink-900">
               Выручка по месяцам
-            </h3>
-            <div className="space-y-3">
+            </h2>
+            <div className="flex items-center gap-3 text-xs text-ink-500">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Выручка
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-red-500" />
+                Расходы
+              </span>
+            </div>
+          </div>
+          {data.monthlyRevenue.length > 0 ? (
+            <ul className="divide-y divide-ink-100">
               {data.monthlyRevenue.map((month, index) => (
-                <div key={index} className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">{month.month}</span>
-                  <div className="flex items-center space-x-4">
-                    <div className="flex items-center">
-                      <div className="w-3 h-3 bg-green-500 rounded-full mr-2"></div>
-                      <span className="text-sm font-medium text-gray-900">
-                        ${month.revenue.toLocaleString()}
+                <li key={index} className="px-5 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm text-ink-600">{month.month}</span>
+                    <div className="flex items-center gap-4 text-right text-sm font-medium">
+                      <span className="text-emerald-600">
+                        {formatMoney(month.revenue)}
                       </span>
-                    </div>
-                    <div className="flex items-center">
-                      <div className="w-3 h-3 bg-red-500 rounded-full mr-2"></div>
-                      <span className="text-sm font-medium text-gray-900">
-                        ${month.expenses.toLocaleString()}
+                      <span className="text-red-600">
+                        {formatMoney(month.expenses)}
                       </span>
                     </div>
                   </div>
-                </div>
+                  <div className="mt-2 space-y-1">
+                    <div className="h-1.5 overflow-hidden rounded-full bg-ink-100">
+                      <div
+                        className="h-full rounded-full bg-emerald-500"
+                        style={{
+                          width: `${((month.revenue || 0) / maxMonthly) * 100}%`,
+                        }}
+                      />
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-ink-100">
+                      <div
+                        className="h-full rounded-full bg-red-500"
+                        style={{
+                          width: `${((month.expenses || 0) / maxMonthly) * 100}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </li>
               ))}
-            </div>
-          </div>
+            </ul>
+          ) : (
+            <EmptyState />
+          )}
+        </section>
 
-          {/* Топ поставщики */}
-          <div className="bg-white rounded-xl p-6 shadow-lg">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">
-              Топ поставщики
-            </h3>
-            <div className="space-y-3">
-              {data.topSuppliers.map((supplier, index) => (
-                <div key={index} className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <span className="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold mr-3">
-                      {index + 1}
-                    </span>
-                    <span className="text-sm font-medium text-gray-900">
-                      {supplier.name}
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm font-bold text-gray-900">
-                      ${supplier.totalValue.toLocaleString()}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {supplier.totalOrders} заказов
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+        {/* Топ поставщики */}
+        <RankedList
+          title="Топ поставщики"
+          rows={data.topSuppliers?.map((supplier) => ({
+            name: supplier.name,
+            value: supplier.totalValue,
+            sub: `${supplier.totalOrders} заказов`,
+          }))}
+        />
+      </div>
 
-        {/* Дополнительная аналитика */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Топ товары */}
-          <div className="bg-white rounded-xl p-6 shadow-lg">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">
-              Популярные товары
-            </h3>
-            <div className="space-y-3">
-              {data.topItems.map((item, index) => (
-                <div key={index} className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <span className="w-6 h-6 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-xs font-bold mr-3">
-                      {index + 1}
-                    </span>
-                    <span className="text-sm font-medium text-gray-900">
-                      {item.name}
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm font-bold text-gray-900">
-                      ${item.totalValue.toLocaleString()}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {item.totalOrders} заказов
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* Дополнительная аналитика */}
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* Топ товары */}
+        <RankedList
+          title="Популярные товары"
+          rows={data.topItems?.map((item) => ({
+            name: item.name,
+            value: item.totalValue,
+            sub: `${item.totalOrders} заказов`,
+          }))}
+        />
 
-          {/* Топ покупатели */}
-          <div className="bg-white rounded-xl p-6 shadow-lg">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">
-              Топ покупатели (прямые продажи)
-            </h3>
-            <div className="space-y-3">
-              {data.topBuyers?.map((buyer, index) => (
-                <div key={index} className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <span className="w-6 h-6 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center text-sm font-bold mr-3">
-                      {index + 1}
-                    </span>
-                    <span className="font-medium text-gray-900">
-                      {buyer.buyer_name}
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm font-bold text-gray-900">
-                      ${buyer.totalSpent?.toFixed(2)}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {buyer.orderCount} заказов
-                    </div>
-                  </div>
-                </div>
-              )) || <p className="text-gray-500">Нет данных</p>}
-            </div>
-          </div>
+        {/* Топ покупатели */}
+        <RankedList
+          title="Топ покупатели (прямые продажи)"
+          rows={data.topBuyers?.map((buyer) => ({
+            name: buyer.buyer_name,
+            value: buyer.totalSpent,
+            sub: `${buyer.orderCount} заказов`,
+          }))}
+        />
 
-          {/* Топ покупатели менеджеров */}
-          <div className="bg-white rounded-xl p-6 shadow-lg">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">
-              Покупатели менеджеров
-            </h3>
-            <div className="space-y-3">
-              {data.topManagerBuyers?.map((buyer, index) => (
-                <div key={index} className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <span className="w-6 h-6 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center text-sm font-bold mr-3">
-                      {index + 1}
-                    </span>
-                    <span className="font-medium text-gray-900">
-                      {buyer.buyer_name}
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm font-bold text-gray-900">
-                      ${buyer.totalSpent?.toFixed(2)}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {buyer.orderCount} покупок
-                    </div>
-                  </div>
-                </div>
-              )) || <p className="text-gray-500">Нет данных</p>}
-            </div>
-          </div>
+        {/* Топ покупатели менеджеров */}
+        <RankedList
+          title="Покупатели менеджеров"
+          rows={data.topManagerBuyers?.map((buyer) => ({
+            name: buyer.buyer_name,
+            value: buyer.totalSpent,
+            sub: `${buyer.orderCount} покупок`,
+          }))}
+        />
 
-          {/* Последняя активность */}
-          <div className="bg-white rounded-xl p-6 shadow-lg">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">
+        {/* Последняя активность */}
+        <section className="card">
+          <div className="border-b border-ink-100 px-5 py-4">
+            <h2 className="text-base font-semibold text-ink-900">
               Последняя активность
-            </h3>
-            <div className="space-y-3">
+            </h2>
+          </div>
+          {data.recentActivity.length > 0 ? (
+            <ul className="divide-y divide-ink-100">
               {data.recentActivity.map((activity, index) => (
-                <div key={index} className="flex items-start space-x-3">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-                  <div className="flex-1">
-                    <p className="text-sm text-gray-900">{activity.details}</p>
-                    <p className="text-xs text-gray-500">
-                      {new Date(activity.created_at).toLocaleDateString(
-                        "ru-RU"
-                      )}{" "}
-                      {new Date(activity.created_at).toLocaleTimeString(
-                        "ru-RU"
-                      )}
+                <li key={index} className="flex items-start gap-3 px-5 py-3">
+                  <div className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-ink-300" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-ink-800">{activity.details}</p>
+                    <p className="mt-0.5 text-xs text-ink-500">
+                      {formatDateTime(activity.created_at)}
                     </p>
                   </div>
-                </div>
+                </li>
               ))}
-            </div>
-          </div>
-        </div>
+            </ul>
+          ) : (
+            <EmptyState />
+          )}
+        </section>
       </div>
     </div>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="px-5 py-10 text-center text-sm text-ink-500">Нет данных</div>
+  );
+}
+
+// Нумерованный список с суммой справа
+function RankedList({
+  title,
+  rows,
+}: {
+  title: string;
+  rows?: Array<{ name: string; value: number; sub: string }>;
+}) {
+  return (
+    <section className="card">
+      <div className="border-b border-ink-100 px-5 py-4">
+        <h2 className="text-base font-semibold text-ink-900">{title}</h2>
+      </div>
+      {rows && rows.length > 0 ? (
+        <ul className="divide-y divide-ink-100">
+          {rows.map((row, index) => (
+            <li key={index} className="flex items-center gap-3 px-5 py-3">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-medium text-ink-600">
+                {index + 1}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink-900">
+                {row.name}
+              </span>
+              <div className="shrink-0 text-right">
+                <div className="text-sm font-semibold text-ink-900">
+                  {formatMoney(row.value)}
+                </div>
+                <div className="text-xs text-ink-500">{row.sub}</div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <EmptyState />
+      )}
+    </section>
   );
 }

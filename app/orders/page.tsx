@@ -1,5 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
+import Icon, { type IconName } from "@/components/Icon";
+import { PageHeader } from "@/components/ui";
+import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
 
 interface Supplier {
   id: number;
@@ -428,12 +431,12 @@ export default function OrdersPage() {
       finalOrderData.total_price = finalTotalPrice;
     }
 
-    // Проверяем баланс
-    if (finalTotalPrice > currentBalance) {
+    // Проверяем баланс (загрузка от компании оформляется в займ и кассу не тратит)
+    if (!formData.isCompanyLoading && finalTotalPrice > currentBalance) {
       alert(
-        `Недостаточно средств! Необходимо: $${finalTotalPrice.toFixed(
-          2
-        )}, Доступно: $${currentBalance.toFixed(2)}`
+        `Недостаточно средств! Необходимо: ${formatMoney(
+          finalTotalPrice
+        )}, Доступно: ${formatMoney(currentBalance)}`
       );
       return;
     }
@@ -731,19 +734,19 @@ export default function OrdersPage() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "paid":
-        return "bg-blue-100 text-blue-800";
+        return "status-info";
       case "in_container":
-        return "bg-purple-100 text-purple-800";
+        return "bg-ink-100 text-ink-700";
       case "on_way":
-        return "bg-yellow-100 text-yellow-800";
+        return "bg-brand-100 text-brand-700";
       case "warehouse":
-        return "bg-green-100 text-green-800";
+        return "status-success";
       case "sold":
-        return "bg-gray-100 text-gray-800";
+        return "bg-ink-50 text-ink-500 ring-1 ring-inset ring-ink-200";
       case "loan":
-        return "bg-red-100 text-red-800";
+        return "status-danger";
       default:
-        return "bg-gray-100 text-gray-800";
+        return "bg-ink-100 text-ink-700";
     }
   };
 
@@ -768,91 +771,93 @@ export default function OrdersPage() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-ink-200 border-t-brand-600"></div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto p-6 space-y-6">
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       {/* Заголовок и баланс */}
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-4 sm:space-y-0">
-        <h1 className="text-2xl font-bold text-gray-900">Заказы</h1>
-        <div className="flex items-center space-x-4">
-          <div className="bg-green-100 px-4 py-2 rounded-lg">
-            <span className="text-sm text-green-700">Доступно: </span>
-            <span className="font-bold text-green-800">
-              ${currentBalance.toFixed(2)}
-            </span>
-          </div>
-          <button
-            onClick={() => setShowAddForm(true)}
-            className="btn btn-primary"
-          >
-            Новый заказ
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Заказы"
+        description="Закупки у поставщиков: контейнеры, доставка, таможня и продажа"
+        actions={
+          <>
+            <div className="flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm">
+              <span className="text-ink-500">Доступно:</span>
+              <span className="font-semibold text-ink-900">
+                {formatMoney(currentBalance)}
+              </span>
+            </div>
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="btn btn-primary"
+            >
+              <Icon name="plus" className="h-4 w-4" />
+              Новый заказ
+            </button>
+          </>
+        }
+      />
 
       {/* Список заказов */}
-      <div className="card">
-        <h2 className="text-lg font-medium mb-4">Все заказы</h2>
+      <div className="card overflow-hidden">
+        <div className="card-header">
+          <h2 className="text-base font-semibold text-ink-900">Все заказы</h2>
+        </div>
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+          <table className="min-w-full divide-y divide-ink-200">
+            <thead className="bg-ink-50">
               <tr>
-                <th className="table-header sticky-first-col z-20 bg-gray-50">
+                <th className="table-header sticky-first-col z-20 bg-ink-50 px-4">
                   Поставщик
                 </th>
-                <th className="table-header">Номер заказа</th>
-                <th className="table-header">Товар</th>
-                <th className="table-header">Количество</th>
-                <th className="table-header">Стоимость</th>
-                <th className="table-header">Статус</th>
-                <th className="table-header">Дата</th>
-                <th className="table-header">Действия</th>
+                <th className="table-header px-4">Заказ и товар</th>
+                <th className="table-header px-4 text-right">Количество</th>
+                <th className="table-header px-4 text-right">Стоимость</th>
+                <th className="table-header px-4">Статус</th>
+                <th className="table-header px-4">Дата</th>
+                <th className="table-header px-4 text-right">Действия</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="divide-y divide-ink-100 bg-white">
               {orders.map((order) => (
-                <tr key={order.id} className="hover:bg-gray-50">
+                <tr key={order.id} className="group hover:bg-ink-50">
                   <td
-                    className="table-cell sticky-first-col z-10 bg-white font-medium cursor-pointer"
+                    className="table-cell sticky-first-col z-10 cursor-pointer bg-white px-4 py-3 font-medium group-hover:bg-ink-50"
                     onClick={() => handleOrderClick(order)}
                   >
                     {order.supplier_name}
                   </td>
                   <td
-                    className="table-cell font-medium cursor-pointer"
+                    className="table-cell cursor-pointer px-4 py-3"
                     onClick={() => handleOrderClick(order)}
                   >
-                    {order.order_number}
+                    <div className="font-medium">{order.order_number}</div>
+                    <div className="text-xs text-ink-500">{order.item_name}</div>
                   </td>
                   <td
-                    className="table-cell cursor-pointer"
-                    onClick={() => handleOrderClick(order)}
-                  >
-                    {order.item_name}
-                  </td>
-                  <td
-                    className="table-cell cursor-pointer"
+                    className="table-cell cursor-pointer px-4 py-3 text-right text-ink-700"
                     onClick={() => handleOrderClick(order)}
                   >
                     {order.value} {order.measurement}
                   </td>
                   <td
-                    className="table-cell cursor-pointer"
+                    className="table-cell cursor-pointer px-4 py-3 text-right font-medium"
                     onClick={() => handleOrderClick(order)}
                   >
-                    ${order.total_price?.toFixed(2)}
+                    {formatMoney(order.total_price)}
                   </td>
                   <td
-                    className="table-cell cursor-pointer"
+                    className="table-cell cursor-pointer px-4 py-3"
                     onClick={() => handleOrderClick(order)}
                   >
                     <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
+                      className={`status-badge ${getStatusColor(
                         order.status
                       )}`}
                     >
@@ -860,67 +865,49 @@ export default function OrdersPage() {
                     </span>
                   </td>
                   <td
-                    className="table-cell cursor-pointer"
+                    className="table-cell cursor-pointer px-4 py-3 text-ink-600"
                     onClick={() => handleOrderClick(order)}
                   >
-                    {new Date(order.date).toLocaleDateString("ru-RU")}
+                    {formatDate(order.date)}
                   </td>
-                  <td className="table-cell">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleViewOrder(order);
-                      }}
-                      className="text-blue-600 hover:text-blue-800 p-2 hover:bg-blue-50 rounded-lg transition-colors"
-                      title="Просмотр операций"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
+                  <td className="table-cell px-4 py-3">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleViewOrder(order);
+                        }}
+                        className="rounded-lg p-1.5 text-ink-500 transition-colors hover:bg-ink-100 hover:text-ink-900"
+                        title="Просмотр операций"
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                        />
-                      </svg>
-                    </button>
+                        <Icon name="eye" className="h-4 w-4" />
+                      </button>
 
-                    {/* Кнопка добавления операционных расходов */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleAddOrderExpense(order);
-                      }}
-                      className="text-green-600 hover:text-green-800 p-2 hover:bg-green-50 rounded-lg transition-colors ml-2"
-                      title="Добавить операционные расходы"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
+                      {/* Кнопка добавления операционных расходов */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAddOrderExpense(order);
+                        }}
+                        className="rounded-lg p-1.5 text-ink-500 transition-colors hover:bg-emerald-50 hover:text-emerald-700"
+                        title="Добавить операционные расходы"
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-                        />
-                      </svg>
-                    </button>
+                        <Icon name="plus" className="h-4 w-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
+              {orders.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="px-4 py-12 text-center text-sm text-ink-500"
+                  >
+                    Заказов пока нет
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -928,15 +915,17 @@ export default function OrdersPage() {
 
       {/* Форма добавления заказа */}
       {showAddForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-xl border border-ink-200 bg-white shadow-xl">
             <div className="p-6">
-              <h2 className="text-xl font-bold mb-4">Новый заказ</h2>
+              <h2 className="mb-5 text-lg font-semibold text-ink-900">
+                Новый заказ
+              </h2>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Номер заказа */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="mb-1 block text-sm font-medium text-ink-700">
                       Номер заказа *
                     </label>
                     <input
@@ -949,21 +938,21 @@ export default function OrdersPage() {
                           order_number: e.target.value,
                         })
                       }
-                      className="input-field w-full"
+                      className="input-field"
                       placeholder="Введите номер заказа"
                     />
                   </div>
 
                   {/* Поставщик */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="mb-1 block text-sm font-medium text-ink-700">
                       Поставщик *
                     </label>
                     <select
                       required
                       value={formData.supplier_id}
                       onChange={(e) => handleSupplierChange(e.target.value)}
-                      className="input-field w-full"
+                      className="input-field"
                       title="Выберите поставщика"
                     >
                       <option value="">Выберите поставщика</option>
@@ -977,7 +966,7 @@ export default function OrdersPage() {
 
                   {/* Товар */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="mb-1 block text-sm font-medium text-ink-700">
                       Товар *
                     </label>
                     <select
@@ -986,7 +975,7 @@ export default function OrdersPage() {
                       onChange={(e) =>
                         setFormData({ ...formData, item_id: e.target.value })
                       }
-                      className="input-field w-full"
+                      className="input-field"
                       title="Выберите товар"
                       disabled={!formData.supplier_id}
                     >
@@ -1001,7 +990,7 @@ export default function OrdersPage() {
 
                   {/* Дата */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="mb-1 block text-sm font-medium text-ink-700">
                       Дата *
                     </label>
                     <input
@@ -1011,14 +1000,14 @@ export default function OrdersPage() {
                       onChange={(e) =>
                         setFormData({ ...formData, date: e.target.value })
                       }
-                      className="input-field w-full"
+                      className="input-field"
                       title="Выберите дату заказа"
                     />
                   </div>
 
                   {/* Описание */}
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="mb-1 block text-sm font-medium text-ink-700">
                       Описание
                     </label>
                     <input
@@ -1030,14 +1019,14 @@ export default function OrdersPage() {
                           description: e.target.value,
                         })
                       }
-                      className="input-field w-full"
+                      className="input-field"
                       placeholder="Введите описание заказа"
                     />
                   </div>
 
                   {/* Измерение */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="mb-1 block text-sm font-medium text-ink-700">
                       Измерение *
                     </label>
                     <input
@@ -1050,14 +1039,14 @@ export default function OrdersPage() {
                           measurement: e.target.value,
                         })
                       }
-                      className="input-field w-full"
+                      className="input-field"
                       placeholder="m3"
                     />
                   </div>
 
                   {/* Количество */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="mb-1 block text-sm font-medium text-ink-700">
                       Количество *
                     </label>
                     <input
@@ -1069,14 +1058,14 @@ export default function OrdersPage() {
                       onChange={(e) =>
                         handleValueChange(parseFloat(e.target.value) || 0)
                       }
-                      className="input-field w-full"
+                      className="input-field"
                       placeholder="0.00"
                     />
                   </div>
 
                   {/* Цена за единицу */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="mb-1 block text-sm font-medium text-ink-700">
                       Цена за единицу ($) *
                     </label>
                     <input
@@ -1090,14 +1079,14 @@ export default function OrdersPage() {
                           parseFloat(e.target.value) || 0
                         )
                       }
-                      className="input-field w-full"
+                      className="input-field"
                       placeholder="0.00"
                     />
                   </div>
 
                   {/* Общая стоимость */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="mb-1 block text-sm font-medium text-ink-700">
                       Общая стоимость ($) *
                     </label>
                     <input
@@ -1109,7 +1098,7 @@ export default function OrdersPage() {
                       onChange={(e) =>
                         handleTotalPriceChange(parseFloat(e.target.value) || 0)
                       }
-                      className="input-field w-full"
+                      className="input-field"
                       placeholder="0.00"
                     />
                   </div>
@@ -1117,15 +1106,18 @@ export default function OrdersPage() {
 
                 {/* Работа с долгами поставщика */}
                 {selectedSupplierDebts.length > 0 && (
-                  <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                    <h4 className="font-medium text-amber-800 mb-3">
+                  <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
+                    <h4 className="mb-3 text-sm font-semibold text-amber-800">
                       Долги поставщика
                     </h4>
 
                     {selectedSupplierDebts.map((debt, idx) => (
-                      <div key={idx} className="mb-3 p-3 bg-amber-100 rounded">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-medium text-amber-900">
+                      <div
+                        key={idx}
+                        className="mb-3 rounded-lg border border-amber-100 bg-white p-3"
+                      >
+                        <div className="mb-2 flex items-center justify-between gap-3">
+                          <span className="text-sm font-medium text-ink-900">
                             {debt.item_name}: {debt.total_debt_value.toFixed(2)}{" "}
                             {debt.measurement}
                           </span>
@@ -1161,14 +1153,14 @@ export default function OrdersPage() {
                                   item.id === parseInt(formData.item_id)
                               )
                             }
-                            className={`px-3 py-1 rounded text-sm ${
+                            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
                               supplierItems.find(
                                 (item) =>
                                   item.name === debt.item_name &&
                                   item.id === parseInt(formData.item_id)
                               )
-                                ? "bg-amber-600 text-white hover:bg-amber-700"
-                                : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                                ? "bg-amber-500 text-white hover:bg-amber-600"
+                                : "cursor-not-allowed bg-ink-100 text-ink-400"
                             }`}
                           >
                             Зачесть долг
@@ -1187,18 +1179,18 @@ export default function OrdersPage() {
                     ))}
 
                     {debtHandling.enabled && (
-                      <div className="mt-4 p-3 bg-white border border-amber-300 rounded">
-                        <h5 className="font-medium text-gray-900 mb-3">
+                      <div className="mt-4 rounded-lg border border-amber-200 bg-white p-4">
+                        <h5 className="mb-3 text-sm font-semibold text-ink-900">
                           Работа с долгом: {debtHandling.item_name}
                         </h5>
 
                         <div className="space-y-3">
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label className="mb-1 block text-sm font-medium text-ink-700">
                               Тип операции
                             </label>
                             <div className="space-y-2">
-                              <label className="flex items-center">
+                              <label className="flex items-center text-sm text-ink-800">
                                 <input
                                   type="radio"
                                   name="debtType"
@@ -1210,11 +1202,11 @@ export default function OrdersPage() {
                                       type: e.target.value,
                                     }))
                                   }
-                                  className="mr-2"
+                                  className="mr-2 h-4 w-4 accent-brand-600"
                                 />
                                 Вычесть из стоимости заказа
                               </label>
-                              <label className="flex items-center">
+                              <label className="flex items-center text-sm text-ink-800">
                                 <input
                                   type="radio"
                                   name="debtType"
@@ -1226,7 +1218,7 @@ export default function OrdersPage() {
                                       type: e.target.value,
                                     }))
                                   }
-                                  className="mr-2"
+                                  className="mr-2 h-4 w-4 accent-brand-600"
                                 />
                                 Добавить к объему заказа
                               </label>
@@ -1234,7 +1226,7 @@ export default function OrdersPage() {
                           </div>
 
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                            <label className="mb-1 block text-sm font-medium text-ink-700">
                               Количество ({formData.measurement})
                             </label>
                             <input
@@ -1252,30 +1244,32 @@ export default function OrdersPage() {
                                   ),
                                 }))
                               }
-                              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-amber-500"
+                              className="input-field"
                               placeholder="0.00"
                             />
-                            <p className="text-xs text-gray-500 mt-1">
+                            <p className="mt-1 text-xs text-ink-500">
                               Максимум: {debtHandling.max_amount.toFixed(2)}{" "}
                               {formData.measurement}
                             </p>
                           </div>
 
                           {debtHandling.type === "subtract" && (
-                            <div className="bg-green-50 p-2 rounded">
-                              <p className="text-sm text-green-800">
-                                Итоговая стоимость: $
-                                {(
-                                  formData.total_price -
-                                  debtHandling.amount *
-                                    (formData.price_per_unit || 0)
-                                ).toFixed(2)}
-                                <span className="text-green-600 ml-2">
-                                  (экономия: $
-                                  {(
+                            <div className="rounded-lg bg-emerald-50 px-3 py-2">
+                              <p className="text-sm text-emerald-800">
+                                Итоговая стоимость:{" "}
+                                <span className="font-semibold">
+                                  {formatMoney(
+                                    formData.total_price -
+                                      debtHandling.amount *
+                                        (formData.price_per_unit || 0)
+                                  )}
+                                </span>
+                                <span className="ml-2 text-emerald-700">
+                                  (экономия:{" "}
+                                  {formatMoney(
                                     debtHandling.amount *
-                                    (formData.price_per_unit || 0)
-                                  ).toFixed(2)}
+                                      (formData.price_per_unit || 0)
+                                  )}
                                   )
                                 </span>
                               </p>
@@ -1283,14 +1277,14 @@ export default function OrdersPage() {
                           )}
 
                           {debtHandling.type === "add_to_order" && (
-                            <div className="bg-blue-50 p-2 rounded">
-                              <p className="text-sm text-blue-800">
+                            <div className="rounded-lg bg-brand-50 px-3 py-2">
+                              <p className="text-sm text-brand-700">
                                 Новый объем заказа:{" "}
                                 {(formData.value + debtHandling.amount).toFixed(
                                   2
                                 )}{" "}
                                 {formData.measurement}
-                                <span className="text-blue-600 ml-2">
+                                <span className="ml-2 text-brand-600">
                                   (+{debtHandling.amount.toFixed(2)}{" "}
                                   {formData.measurement} от долга)
                                 </span>
@@ -1298,7 +1292,7 @@ export default function OrdersPage() {
                             </div>
                           )}
 
-                          <div className="flex space-x-2">
+                          <div className="flex gap-2">
                             <button
                               type="button"
                               onClick={() =>
@@ -1307,7 +1301,7 @@ export default function OrdersPage() {
                                   enabled: false,
                                 }))
                               }
-                              className="px-3 py-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                              className="btn btn-secondary px-3 py-1.5 text-xs"
                             >
                               Отмена
                             </button>
@@ -1330,21 +1324,18 @@ export default function OrdersPage() {
                         isCompanyLoading: e.target.checked,
                       })
                     }
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    className="h-4 w-4 rounded border-ink-300 accent-brand-600"
                   />
                   <label
                     htmlFor="companyLoading"
-                    className="ml-2 text-sm text-gray-900"
+                    className="ml-2 text-sm text-ink-800"
                   >
                     Загружается от компании (займ)
                   </label>
                 </div>
 
                 {/* Кнопки */}
-                <div className="flex space-x-3 pt-4">
-                  <button type="submit" className="btn btn-primary">
-                    Создать заказ
-                  </button>
+                <div className="flex justify-end gap-3 border-t border-ink-100 pt-4">
                   <button
                     type="button"
                     onClick={() => {
@@ -1355,6 +1346,9 @@ export default function OrdersPage() {
                   >
                     Отмена
                   </button>
+                  <button type="submit" className="btn btn-primary">
+                    Создать заказ
+                  </button>
                 </div>
               </form>
             </div>
@@ -1364,18 +1358,20 @@ export default function OrdersPage() {
 
       {/* Диалог оплаты транспортировки */}
       {showTransportDialog && selectedOrder && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-ink-200 bg-white shadow-xl">
             <div className="p-6">
-              <h3 className="text-lg font-bold mb-4">Оплата транспортировки</h3>
-              <p className="text-sm text-gray-600 mb-4">
+              <h3 className="mb-4 text-lg font-semibold text-ink-900">
+                Оплата транспортировки
+              </h3>
+              <p className="mb-4 rounded-lg bg-ink-50 px-4 py-3 text-sm text-ink-600">
                 Заказ: {selectedOrder.order_number}
                 <br />
                 Общий объем: {selectedOrder.value} {selectedOrder.measurement}
               </p>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="mb-1 block text-sm font-medium text-ink-700">
                     Стоимость транспортировки ($)
                   </label>
                   <input
@@ -1389,12 +1385,12 @@ export default function OrdersPage() {
                         cost: parseFloat(e.target.value) || 0,
                       })
                     }
-                    className="input-field w-full"
+                    className="input-field"
                     placeholder="0.00"
                   />
                 </div>
                 {/* Чекбокс для загрузки в несколько контейнеров */}
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
                     id="multipleContainers"
@@ -1409,11 +1405,11 @@ export default function OrdersPage() {
                           : [],
                       })
                     }
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    className="h-4 w-4 rounded border-ink-300 accent-brand-600"
                   />
                   <label
                     htmlFor="multipleContainers"
-                    className="text-sm font-medium text-gray-700"
+                    className="text-sm font-medium text-ink-700"
                   >
                     Загружается в несколько контейнеров
                   </label>
@@ -1421,7 +1417,7 @@ export default function OrdersPage() {
 
                 {/* Чекбокс для загрузки от компании */}
                 {transportForm.multipleContainers && (
-                  <div className="flex items-center space-x-2 ml-6">
+                  <div className="ml-6 flex items-center gap-2">
                     <input
                       type="checkbox"
                       id="companyLoadingTransport"
@@ -1432,11 +1428,11 @@ export default function OrdersPage() {
                           isCompanyLoading: e.target.checked,
                         })
                       }
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      className="h-4 w-4 rounded border-ink-300 accent-brand-600"
                     />
                     <label
                       htmlFor="companyLoadingTransport"
-                      className="text-sm font-medium text-gray-700"
+                      className="text-sm font-medium text-ink-700"
                     >
                       Загружается от компании (займ)
                     </label>
@@ -1445,9 +1441,9 @@ export default function OrdersPage() {
 
                 {/* Создание контейнеров */}
                 {transportForm.multipleContainers && (
-                  <div className="space-y-4 border-t pt-4">
+                  <div className="space-y-4 border-t border-ink-100 pt-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="mb-1 block text-sm font-medium text-ink-700">
                         Количество контейнеров
                       </label>
                       <input
@@ -1471,26 +1467,26 @@ export default function OrdersPage() {
                             containers: newContainers,
                           });
                         }}
-                        className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="input-field w-32"
                         title="Введите количество контейнеров"
                       />
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                       {transportForm.containers.map((container, index) => (
                         <div
                           key={container.container}
-                          className={`border p-3 rounded ${
+                          className={`rounded-lg border p-3 ${
                             transportForm.isCompanyLoading &&
                             transportForm.selectedContainers.includes(
                               container.container
                             )
-                              ? "border-blue-500 bg-blue-50"
-                              : ""
+                              ? "border-brand-500 bg-brand-50"
+                              : "border-ink-200"
                           }`}
                         >
-                          <div className="flex items-center justify-between mb-2">
-                            <h4 className="font-medium">
+                          <div className="mb-2 flex items-center justify-between">
+                            <h4 className="text-sm font-medium text-ink-900">
                               Контейнер {container.container}
                             </h4>
                             {transportForm.isCompanyLoading && (
@@ -1502,7 +1498,7 @@ export default function OrdersPage() {
                                 onChange={() =>
                                   toggleContainerSelection(container.container)
                                 }
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                className="h-4 w-4 rounded border-ink-300 accent-brand-600"
                                 title="Оплатить этот контейнер"
                               />
                             )}
@@ -1527,14 +1523,14 @@ export default function OrdersPage() {
                                 containers: updatedContainers,
                               });
                             }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="input-field"
                             placeholder={`Количество (${selectedOrder.measurement})`}
                           />
                         </div>
                       ))}
                     </div>
 
-                    <div className="text-sm text-gray-600 space-y-1">
+                    <div className="space-y-1 text-sm text-ink-600">
                       <div>
                         Общий объем: {selectedOrder.value}{" "}
                         {selectedOrder.measurement}
@@ -1553,15 +1549,15 @@ export default function OrdersPage() {
                 {/* Выбор существующих контейнеров (если не создаем новые) */}
                 {!transportForm.multipleContainers && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-1 block text-sm font-medium text-ink-700">
                       Выберите контейнеры для транспортировки:
                     </label>
-                    <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto">
+                    <div className="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto">
                       {getOrderContainers(selectedOrder).map(
                         (container: ContainerLoad) => (
                           <label
                             key={container.container}
-                            className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50"
+                            className="flex cursor-pointer items-center rounded-lg border border-ink-200 p-3 transition-colors hover:bg-ink-50"
                           >
                             <input
                               type="checkbox"
@@ -1571,13 +1567,13 @@ export default function OrdersPage() {
                               onChange={() =>
                                 toggleContainerSelection(container.container)
                               }
-                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-3"
+                              className="mr-3 h-4 w-4 rounded border-ink-300 accent-brand-600"
                             />
                             <div className="flex-1">
-                              <div className="font-medium">
+                              <div className="text-sm font-medium text-ink-900">
                                 Контейнер {container.container}
                               </div>
-                              <div className="text-sm text-gray-600">
+                              <div className="text-sm text-ink-500">
                                 {container.value.toFixed(2)}{" "}
                                 {selectedOrder.measurement}
                               </div>
@@ -1587,7 +1583,7 @@ export default function OrdersPage() {
                       )}
                     </div>
                     {transportForm.selectedContainers.length > 0 && (
-                      <div className="mt-2 text-sm text-blue-600">
+                      <div className="mt-2 rounded-lg bg-brand-50 px-3 py-2 text-sm text-brand-700">
                         Выбрано контейнеров:{" "}
                         {transportForm.selectedContainers.length}
                         <br />
@@ -1609,14 +1605,7 @@ export default function OrdersPage() {
                   </div>
                 )}
               </div>
-              <div className="flex space-x-3 mt-6">
-                <button
-                  onClick={handlePayTransportation}
-                  disabled={transportForm.selectedContainers.length === 0}
-                  className="btn btn-primary disabled:opacity-50"
-                >
-                  Оплатить
-                </button>
+              <div className="mt-6 flex justify-end gap-3 border-t border-ink-100 pt-4">
                 <button
                   onClick={() => {
                     setShowTransportDialog(false);
@@ -1626,6 +1615,13 @@ export default function OrdersPage() {
                 >
                   Отмена
                 </button>
+                <button
+                  onClick={handlePayTransportation}
+                  disabled={transportForm.selectedContainers.length === 0}
+                  className="btn btn-primary"
+                >
+                  Оплатить
+                </button>
               </div>
             </div>
           </div>
@@ -1634,18 +1630,18 @@ export default function OrdersPage() {
 
       {/* Диалог оплаты таможенного сбора */}
       {showCustomerFeeDialog && selectedOrder && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-ink-200 bg-white shadow-xl">
             <div className="p-6">
-              <h3 className="text-lg font-bold mb-4">
+              <h3 className="mb-4 text-lg font-semibold text-ink-900">
                 Оплата таможенного сбора
               </h3>
-              <p className="text-sm text-gray-600 mb-4">
+              <p className="mb-4 rounded-lg bg-ink-50 px-4 py-3 text-sm text-ink-600">
                 Заказ: {selectedOrder.order_number}
               </p>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="mb-1 block text-sm font-medium text-ink-700">
                     Объем ({selectedOrder.measurement})
                   </label>
                   <input
@@ -1661,12 +1657,12 @@ export default function OrdersPage() {
                           parseFloat(e.target.value) || selectedOrder.value,
                       })
                     }
-                    className="input-field w-full"
+                    className="input-field"
                     placeholder={selectedOrder.value.toString()}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="mb-1 block text-sm font-medium text-ink-700">
                     Стоимость таможенного сбора ($)
                   </label>
                   <input
@@ -1680,18 +1676,12 @@ export default function OrdersPage() {
                         cost: parseFloat(e.target.value) || 0,
                       })
                     }
-                    className="input-field w-full"
+                    className="input-field"
                     placeholder="0.00"
                   />
                 </div>
               </div>
-              <div className="flex space-x-3 mt-6">
-                <button
-                  onClick={handlePayCustomerFee}
-                  className="btn btn-primary"
-                >
-                  Оплатить
-                </button>
+              <div className="mt-6 flex justify-end gap-3 border-t border-ink-100 pt-4">
                 <button
                   onClick={() => {
                     setShowCustomerFeeDialog(false);
@@ -1701,6 +1691,12 @@ export default function OrdersPage() {
                 >
                   Отмена
                 </button>
+                <button
+                  onClick={handlePayCustomerFee}
+                  className="btn btn-primary"
+                >
+                  Оплатить
+                </button>
               </div>
             </div>
           </div>
@@ -1709,18 +1705,20 @@ export default function OrdersPage() {
 
       {/* Диалог продажи */}
       {showSellDialog && selectedOrder && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-ink-200 bg-white shadow-xl">
             <div className="p-6">
-              <h3 className="text-lg font-bold mb-4">Продажа товара</h3>
-              <p className="text-sm text-gray-600 mb-4">
+              <h3 className="mb-4 text-lg font-semibold text-ink-900">
+                Продажа товара
+              </h3>
+              <p className="mb-4 rounded-lg bg-ink-50 px-4 py-3 text-sm text-ink-600">
                 Заказ: {selectedOrder.order_number}
                 <br />
                 Доступно: {selectedOrder.value} {selectedOrder.measurement}
               </p>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="mb-1 block text-sm font-medium text-ink-700">
                     Объем продажи ({selectedOrder.measurement}) *
                   </label>
                   <input
@@ -1736,13 +1734,13 @@ export default function OrdersPage() {
                         value: parseFloat(e.target.value) || 0,
                       })
                     }
-                    className="input-field w-full"
+                    className="input-field"
                     placeholder="0.00"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Цена ($) *
+                  <label className="mb-1 block text-sm font-medium text-ink-700">
+                    Цена за единицу ($) *
                   </label>
                   <input
                     type="number"
@@ -1756,12 +1754,16 @@ export default function OrdersPage() {
                         price: parseFloat(e.target.value) || 0,
                       })
                     }
-                    className="input-field w-full"
+                    className="input-field"
                     placeholder="0.00"
                   />
+                  {/* Сервер умножает цену на объем — показываем итоговую сумму */}
+                  <p className="mt-1 text-xs text-ink-500">
+                    Итого: {formatMoney(sellForm.value * sellForm.price)}
+                  </p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="mb-1 block text-sm font-medium text-ink-700">
                     Покупатель *
                   </label>
                   <input
@@ -1774,12 +1776,12 @@ export default function OrdersPage() {
                         buyer_name: e.target.value,
                       })
                     }
-                    className="input-field w-full"
+                    className="input-field"
                     placeholder="Имя покупателя"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="mb-1 block text-sm font-medium text-ink-700">
                     Описание
                   </label>
                   <input
@@ -1791,12 +1793,12 @@ export default function OrdersPage() {
                         description: e.target.value,
                       })
                     }
-                    className="input-field w-full"
+                    className="input-field"
                     placeholder="Описание продажи"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="mb-1 block text-sm font-medium text-ink-700">
                     Дата продажи *
                   </label>
                   <input
@@ -1809,7 +1811,7 @@ export default function OrdersPage() {
                         date: e.target.value,
                       })
                     }
-                    className="input-field w-full"
+                    className="input-field"
                     title="Выберите дату продажи"
                   />
                 </div>
@@ -1835,11 +1837,11 @@ export default function OrdersPage() {
                               : sellForm.buyer_name,
                         });
                       }}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      className="h-4 w-4 rounded border-ink-300 accent-brand-600"
                     />
                     <label
                       htmlFor="linkToManager"
-                      className="ml-2 text-sm text-gray-900"
+                      className="ml-2 text-sm text-ink-800"
                     >
                       Связать продажу с менеджером (автоматически увеличить его
                       займ)
@@ -1848,7 +1850,7 @@ export default function OrdersPage() {
 
                   {sellForm.link_to_manager && (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="mb-1 block text-sm font-medium text-ink-700">
                         Менеджер *
                       </label>
                       <select
@@ -1867,7 +1869,7 @@ export default function OrdersPage() {
                               : sellForm.buyer_name,
                           });
                         }}
-                        className="input-field w-full"
+                        className="input-field"
                         title="Выберите менеджера"
                       >
                         <option value="">Выберите менеджера</option>
@@ -1881,10 +1883,7 @@ export default function OrdersPage() {
                   )}
                 </div>
               </div>
-              <div className="flex space-x-3 mt-6">
-                <button onClick={handleSellOrder} className="btn btn-primary">
-                  Продать
-                </button>
+              <div className="mt-6 flex justify-end gap-3 border-t border-ink-100 pt-4">
                 <button
                   onClick={() => {
                     setShowSellDialog(false);
@@ -1894,6 +1893,9 @@ export default function OrdersPage() {
                 >
                   Отмена
                 </button>
+                <button onClick={handleSellOrder} className="btn btn-primary">
+                  Продать
+                </button>
               </div>
             </div>
           </div>
@@ -1902,26 +1904,28 @@ export default function OrdersPage() {
 
       {/* Диалог оплаты займа */}
       {showLoanPaymentDialog && selectedOrder && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-ink-200 bg-white shadow-xl">
             <div className="p-6">
-              <h3 className="text-lg font-bold mb-4">Оплата займа</h3>
-              <p className="text-sm text-gray-600 mb-4">
+              <h3 className="mb-4 text-lg font-semibold text-ink-900">
+                Оплата займа
+              </h3>
+              <p className="mb-4 rounded-lg bg-ink-50 px-4 py-3 text-sm text-ink-600">
                 Заказ: {selectedOrder.order_number}
                 <br />
                 Общий объем: {selectedOrder.value} {selectedOrder.measurement}
               </p>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="mb-1 block text-sm font-medium text-ink-700">
                     Выберите контейнеры для оплаты займа:
                   </label>
-                  <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto">
+                  <div className="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto">
                     {getOrderContainers(selectedOrder).map(
                       (container: OrderContainer, index: number) => (
                         <div
                           key={index}
-                          className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50"
+                          className="flex cursor-pointer items-center rounded-lg border border-ink-200 p-3 transition-colors hover:bg-ink-50"
                         >
                           <input
                             type="checkbox"
@@ -1965,14 +1969,14 @@ export default function OrdersPage() {
                                 containers: newContainers,
                               });
                             }}
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-3"
+                            className="mr-3 h-4 w-4 rounded border-ink-300 accent-brand-600"
                             title="Выбрать контейнер для оплаты"
                           />
                           <div className="flex-1">
-                            <div className="font-medium">
+                            <div className="text-sm font-medium text-ink-900">
                               Контейнер {container.container}
                             </div>
-                            <div className="text-sm text-gray-600">
+                            <div className="text-sm text-ink-500">
                               {container.value.toFixed(2)}{" "}
                               {selectedOrder.measurement}
                             </div>
@@ -1982,7 +1986,7 @@ export default function OrdersPage() {
                     )}
                   </div>
                   {loanPaymentForm.containers.length > 0 && (
-                    <div className="mt-2 text-sm text-blue-600">
+                    <div className="mt-2 rounded-lg bg-brand-50 px-3 py-2 text-sm text-brand-700">
                       Выбрано контейнеров: {loanPaymentForm.containers.length}
                       <br />
                       Общий объем:{" "}
@@ -2006,22 +2010,25 @@ export default function OrdersPage() {
                 </div>
                 <div className="space-y-4">
                   {loanPaymentForm.containers.map((container, index) => (
-                    <div key={index} className="bg-gray-50 p-3 rounded-lg">
-                      <div className="flex items-center justify-between mb-2">
-                        <h4 className="font-medium">
+                    <div
+                      key={index}
+                      className="rounded-lg border border-ink-200 bg-ink-50 p-3"
+                    >
+                      <div className="mb-2 flex items-center justify-between">
+                        <h4 className="text-sm font-medium text-ink-900">
                           Контейнер {container.container}
                         </h4>
                         <button
                           type="button"
                           onClick={() => removeLoanContainer(index)}
-                          className="text-red-600 hover:text-red-800 text-sm"
+                          className="text-sm font-medium text-red-600 hover:text-red-700"
                         >
                           Удалить
                         </button>
                       </div>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <label className="mb-1 block text-sm font-medium text-ink-700">
                             Объем ({selectedOrder.measurement})
                           </label>
                           <input
@@ -2037,12 +2044,12 @@ export default function OrdersPage() {
                                 parseFloat(e.target.value) || 0
                               )
                             }
-                            className="input-field w-full"
+                            className="input-field"
                             placeholder="0.00"
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <label className="mb-1 block text-sm font-medium text-ink-700">
                             Стоимость ($)
                           </label>
                           <input
@@ -2057,12 +2064,12 @@ export default function OrdersPage() {
                                 parseFloat(e.target.value) || 0
                               )
                             }
-                            className="input-field w-full"
+                            className="input-field"
                             placeholder="0.00"
                           />
                         </div>
                         <div className="col-span-2">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <label className="mb-1 block text-sm font-medium text-ink-700">
                             Описание
                           </label>
                           <input
@@ -2075,7 +2082,7 @@ export default function OrdersPage() {
                                 e.target.value
                               )
                             }
-                            className="input-field w-full"
+                            className="input-field"
                             placeholder="Описание оплаты"
                           />
                         </div>
@@ -2083,34 +2090,37 @@ export default function OrdersPage() {
                     </div>
                   ))}
                 </div>
-                <div className="flex justify-end space-x-3">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-ink-100 pt-4">
                   <button
                     type="button"
                     onClick={addLoanContainer}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                    className="btn btn-secondary"
                   >
+                    <Icon name="plus" className="h-4 w-4" />
                     Добавить контейнер
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleLoanPayment}
-                    disabled={
-                      loanPaymentForm.containers.length === 0 ||
-                      loanPaymentForm.containers.some(
-                        (c) => c.value === 0 || c.cost === 0
-                      )
-                    }
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
-                  >
-                    Оплатить займ
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowLoanPaymentDialog(false)}
-                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
-                  >
-                    Отмена
-                  </button>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowLoanPaymentDialog(false)}
+                      className="btn btn-secondary"
+                    >
+                      Отмена
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleLoanPayment}
+                      disabled={
+                        loanPaymentForm.containers.length === 0 ||
+                        loanPaymentForm.containers.some(
+                          (c) => c.value === 0 || c.cost === 0
+                        )
+                      }
+                      className="btn btn-primary"
+                    >
+                      Оплатить займ
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2120,23 +2130,24 @@ export default function OrdersPage() {
 
       {/* Диалог создания контейнера для нового заказа */}
       {showContainerCreationDialog && newlyCreatedOrder && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-ink-200 bg-white shadow-xl">
             <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-bold text-gray-900">
+              <div className="mb-5 flex items-center justify-between gap-4">
+                <h3 className="text-lg font-semibold text-ink-900">
                   Создать контейнер
                 </h3>
                 <button
                   onClick={handleSkipContainer}
-                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                  className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-600"
+                  aria-label="Закрыть"
                 >
-                  ×
+                  <Icon name="close" className="h-5 w-5" />
                 </button>
               </div>
 
               <div className="mb-4">
-                <p className="text-sm text-gray-600">
+                <p className="rounded-lg bg-ink-50 px-4 py-3 text-sm text-ink-600">
                   Заказ: {newlyCreatedOrder.order_number}
                   <br />
                   Общий объем: {newlyCreatedOrder.value}{" "}
@@ -2148,7 +2159,7 @@ export default function OrdersPage() {
 
               <form onSubmit={handleCreateContainer} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1 block text-sm font-medium text-ink-700">
                     Объем контейнера ({newlyCreatedOrder.measurement}) *
                   </label>
                   <input
@@ -2164,14 +2175,14 @@ export default function OrdersPage() {
                         volume: parseFloat(e.target.value) || 0,
                       })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="input-field"
                     placeholder={`Максимум: ${newlyCreatedOrder.value}`}
                     title="Введите объем контейнера"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1 block text-sm font-medium text-ink-700">
                     Описание контейнера
                   </label>
                   <textarea
@@ -2182,24 +2193,24 @@ export default function OrdersPage() {
                         description: e.target.value,
                       })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="input-field"
                     rows={3}
                     placeholder="Описание контейнера (необязательно)"
                     title="Введите описание контейнера"
                   />
                 </div>
 
-                <div className="flex space-x-3 pt-4">
+                <div className="flex justify-end gap-3 border-t border-ink-100 pt-4">
                   <button
                     type="button"
                     onClick={handleSkipContainer}
-                    className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="btn btn-secondary"
                   >
                     Пропустить
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                    className="btn btn-primary"
                   >
                     Создать контейнер
                   </button>
@@ -2212,23 +2223,24 @@ export default function OrdersPage() {
 
       {/* Диалог добавления операционных расходов */}
       {showOrderExpenseDialog && selectedOrder && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-ink-200 bg-white shadow-xl">
             <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-bold text-gray-900">
+              <div className="mb-5 flex items-center justify-between gap-4">
+                <h3 className="text-lg font-semibold text-ink-900">
                   Добавить операционные расходы
                 </h3>
                 <button
                   onClick={() => setShowOrderExpenseDialog(false)}
-                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                  className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-600"
+                  aria-label="Закрыть"
                 >
-                  ×
+                  <Icon name="close" className="h-5 w-5" />
                 </button>
               </div>
 
               <div className="mb-4">
-                <p className="text-sm text-gray-600">
+                <p className="rounded-lg bg-ink-50 px-4 py-3 text-sm text-ink-600">
                   Заказ: {selectedOrder.order_number}
                   <br />
                   Поставщик: {selectedOrder.supplier_name}
@@ -2237,7 +2249,7 @@ export default function OrdersPage() {
 
               <form onSubmit={handleSubmitOrderExpense} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1 block text-sm font-medium text-ink-700">
                     Сумма расхода ($) *
                   </label>
                   <input
@@ -2252,14 +2264,14 @@ export default function OrdersPage() {
                         amount: parseFloat(e.target.value) || 0,
                       })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="0.00"
                     title="Введите сумму операционного расхода"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1 block text-sm font-medium text-ink-700">
                     Описание
                   </label>
                   <textarea
@@ -2270,24 +2282,24 @@ export default function OrdersPage() {
                         description: e.target.value,
                       })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="input-field"
                     rows={3}
                     placeholder="Описание операционного расхода (необязательно)"
                     title="Введите описание расхода"
                   />
                 </div>
 
-                <div className="flex space-x-3 pt-4">
+                <div className="flex justify-end gap-3 border-t border-ink-100 pt-4">
                   <button
                     type="button"
                     onClick={() => setShowOrderExpenseDialog(false)}
-                    className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="btn btn-secondary"
                   >
                     Отмена
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+                    className="btn btn-primary"
                   >
                     Добавить расход
                   </button>
@@ -2300,54 +2312,55 @@ export default function OrdersPage() {
 
       {/* Модальное окно просмотра операций заказа */}
       {showOrderDetailsDialog && selectedOrder && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-xl border border-ink-200 bg-white shadow-xl">
             <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-bold text-gray-900">
+              <div className="mb-5 flex items-center justify-between gap-4">
+                <h3 className="text-lg font-semibold text-ink-900">
                   История операций заказа {selectedOrder.order_number}
                 </h3>
                 <button
                   onClick={() => setShowOrderDetailsDialog(false)}
-                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                  className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-600"
+                  aria-label="Закрыть"
                 >
-                  ×
+                  <Icon name="close" className="h-5 w-5" />
                 </button>
               </div>
 
               {/* Основная информация о заказе */}
-              <div className="bg-gray-50 rounded-lg p-4 mb-6">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="mb-6 rounded-lg border border-ink-200 bg-ink-50 p-4">
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
                   <div>
-                    <span className="text-sm font-medium text-gray-500">
+                    <span className="text-xs font-medium text-ink-500">
                       Поставщик:
                     </span>
-                    <p className="text-sm text-gray-900">
+                    <p className="mt-0.5 text-sm font-medium text-ink-900">
                       {selectedOrder.supplier_name}
                     </p>
                   </div>
                   <div>
-                    <span className="text-sm font-medium text-gray-500">
+                    <span className="text-xs font-medium text-ink-500">
                       Товар:
                     </span>
-                    <p className="text-sm text-gray-900">
+                    <p className="mt-0.5 text-sm font-medium text-ink-900">
                       {selectedOrder.item_name}
                     </p>
                   </div>
                   <div>
-                    <span className="text-sm font-medium text-gray-500">
+                    <span className="text-xs font-medium text-ink-500">
                       Количество:
                     </span>
-                    <p className="text-sm text-gray-900">
+                    <p className="mt-0.5 text-sm font-medium text-ink-900">
                       {selectedOrder.value} {selectedOrder.measurement}
                     </p>
                   </div>
                   <div>
-                    <span className="text-sm font-medium text-gray-500">
+                    <span className="text-xs font-medium text-ink-500">
                       Текущая стоимость:
                     </span>
-                    <p className="text-sm font-bold text-green-600">
-                      ${selectedOrder.total_price?.toFixed(2)}
+                    <p className="mt-0.5 text-sm font-semibold text-ink-900">
+                      {formatMoney(selectedOrder.total_price)}
                     </p>
                   </div>
                 </div>
@@ -2355,46 +2368,46 @@ export default function OrdersPage() {
 
               {/* История операций */}
               <div>
-                <h4 className="text-md font-semibold text-gray-900 mb-4">
+                <h4 className="mb-3 text-sm font-semibold text-ink-900">
                   История операций
                 </h4>
                 {orderOperations.length === 0 ? (
-                  <div className="text-center py-8">
-                    <p className="text-gray-500">Операций не найдено</p>
+                  <div className="rounded-lg border border-dashed border-ink-200 py-8 text-center">
+                    <p className="text-sm text-ink-500">Операций не найдено</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     {orderOperations.map((operation, index) => (
                       <div
                         key={index}
-                        className="border rounded-lg p-4 hover:bg-gray-50"
+                        className="rounded-lg border border-ink-200 p-4"
                       >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-2">
-                              <span className="text-lg">
-                                {getOperationIcon(operation.action)}
-                              </span>
-                              <span className="font-medium text-gray-900">
-                                {getOperationTitle(operation.action)}
-                              </span>
-                              {operation.amount && (
-                                <span className="text-sm font-bold text-blue-600">
-                                  ${operation.amount.toFixed(2)}
-                                </span>
-                              )}
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex min-w-0 flex-1 gap-3">
+                            <div className="shrink-0 rounded-lg bg-ink-100 p-2 text-ink-600">
+                              <Icon
+                                name={getOperationIcon(operation.action)}
+                                className="h-4 w-4"
+                              />
                             </div>
-                            <p className="text-sm text-gray-600 mt-1">
-                              {operation.details}
-                            </p>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-x-2">
+                                <span className="text-sm font-medium text-ink-900">
+                                  {getOperationTitle(operation.action)}
+                                </span>
+                                {operation.amount && (
+                                  <span className="text-sm font-semibold text-ink-900">
+                                    {formatMoney(operation.amount)}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="mt-1 text-sm text-ink-600">
+                                {operation.details}
+                              </p>
+                            </div>
                           </div>
-                          <div className="text-xs text-gray-400">
-                            {new Date(operation.created_at).toLocaleDateString(
-                              "ru-RU"
-                            )}{" "}
-                            {new Date(operation.created_at).toLocaleTimeString(
-                              "ru-RU"
-                            )}
+                          <div className="whitespace-nowrap text-xs text-ink-500">
+                            {formatDateTime(operation.created_at)}
                           </div>
                         </div>
                       </div>
@@ -2403,10 +2416,10 @@ export default function OrdersPage() {
                 )}
               </div>
 
-              <div className="flex justify-end mt-6">
+              <div className="mt-6 flex justify-end border-t border-ink-100 pt-4">
                 <button
                   onClick={() => setShowOrderDetailsDialog(false)}
-                  className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
+                  className="btn btn-secondary"
                 >
                   Закрыть
                 </button>
@@ -2419,26 +2432,26 @@ export default function OrdersPage() {
   );
 
   // Вспомогательные функции для отображения операций
-  function getOperationIcon(action: string) {
+  function getOperationIcon(action: string): IconName {
     switch (action) {
       case "заказ_создан":
-        return "📦";
+        return "cube";
       case "оплата_транспорта":
-        return "🚛";
+        return "truck";
       case "оплата_таможни":
-        return "🚢";
+        return "shield";
       case "оплата_займа":
-        return "💰";
+        return "wallet";
       case "продажа":
-        return "💵";
+        return "trendUp";
       case "продажа_менеджера":
-        return "🛒";
+        return "user";
       case "увеличение_цены_заказа":
-        return "📈";
+        return "chart";
       case "создание_расхода":
-        return "📉";
+        return "plus";
       default:
-        return "📝";
+        return "clock";
     }
   }
 

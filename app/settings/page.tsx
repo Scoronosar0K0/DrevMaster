@@ -1,5 +1,13 @@
 "use client";
 import { useState, useEffect } from "react";
+import Icon from "@/components/Icon";
+import { PageHeader } from "@/components/ui";
+
+const SEARCH_PATH = "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z";
+const EDIT_PATH =
+  "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z";
+const TRASH_PATH =
+  "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16";
 
 interface User {
   id: number;
@@ -65,9 +73,13 @@ export default function SettingsPage() {
 
   const fetchUsers = async () => {
     try {
+      // Список пользователей доступен только администратору
+      const storedUser = localStorage.getItem("drevmaster_user");
+      if (storedUser && JSON.parse(storedUser).role !== "admin") return;
+
       const response = await fetch("/api/users");
       const data = await response.json();
-      setUsers(data);
+      setUsers(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Ошибка загрузки пользователей:", error);
     } finally {
@@ -202,8 +214,8 @@ export default function SettingsPage() {
 
   const toggleUserStatus = async (id: number, currentStatus: boolean) => {
     try {
-      const response = await fetch(`/api/users/${id}`, {
-        method: "PUT",
+      const response = await fetch(`/api/users/${id}/toggle-active`, {
+        method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
@@ -229,6 +241,8 @@ export default function SettingsPage() {
     switch (role) {
       case "admin":
         return "Администратор";
+      case "manager":
+        return "Менеджер";
       case "partner":
         return "Партнер";
       case "user":
@@ -238,16 +252,32 @@ export default function SettingsPage() {
     }
   };
 
+  // Короткая метка роли для узких экранов
+  const getRoleShort = (role: string) => {
+    switch (role) {
+      case "admin":
+        return "А";
+      case "manager":
+        return "М";
+      case "partner":
+        return "П";
+      default:
+        return "У";
+    }
+  };
+
   const getRoleColor = (role: string) => {
     switch (role) {
       case "admin":
-        return "bg-red-100 text-red-800";
+        return "bg-red-50 text-red-700";
+      case "manager":
+        return "bg-brand-50 text-brand-700";
       case "partner":
-        return "bg-blue-100 text-blue-800";
+        return "bg-emerald-50 text-emerald-700";
       case "user":
-        return "bg-green-100 text-green-800";
+        return "bg-ink-100 text-ink-700";
       default:
-        return "bg-gray-100 text-gray-800";
+        return "bg-ink-100 text-ink-700";
     }
   };
 
@@ -259,369 +289,414 @@ export default function SettingsPage() {
         user.email.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
+  const tabClass = (tab: "profile" | "users" | "system") =>
+    `-mb-px whitespace-nowrap border-b-2 px-1 py-3 text-sm font-medium transition-colors ${
+      activeTab === tab
+        ? "border-brand-600 text-ink-900"
+        : "border-transparent text-ink-500 hover:border-ink-300 hover:text-ink-700"
+    }`;
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Загрузка настроек...</p>
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <div className="flex items-center justify-center py-24 text-ink-500">
+          <span className="loading-spinner mr-3 text-brand-600" />
+          <span className="text-sm">Загрузка настроек...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {/* Заголовок */}
-        <div className="mb-6 sm:mb-8">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
-            ⚙️ Настройки
-          </h1>
-          <p className="text-sm sm:text-base text-gray-600">
-            Управление профилем и системными настройками
-          </p>
-        </div>
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      <PageHeader
+        title="Настройки"
+        description="Управление профилем и системными настройками"
+      />
 
-        {/* Вкладки */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6">
-          <div className="flex border-b border-gray-200">
+      {/* Вкладки */}
+      <div className="mb-6 overflow-x-auto">
+        <nav className="flex w-max min-w-full gap-6 border-b border-ink-200">
+          <button
+            onClick={() => setActiveTab("profile")}
+            className={tabClass("profile")}
+          >
+            Мой профиль
+          </button>
+          {currentUser?.role === "admin" && (
             <button
-              onClick={() => setActiveTab("profile")}
-              className={`px-6 py-4 text-sm font-medium transition-colors ${
-                activeTab === "profile"
-                  ? "border-b-2 border-blue-500 text-blue-600"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
+              onClick={() => setActiveTab("users")}
+              className={tabClass("users")}
             >
-              👤 Мой профиль
+              Пользователи
             </button>
-            {currentUser?.role === "admin" && (
-              <button
-                onClick={() => setActiveTab("users")}
-                className={`px-6 py-4 text-sm font-medium transition-colors ${
-                  activeTab === "users"
-                    ? "border-b-2 border-blue-500 text-blue-600"
-                    : "text-gray-500 hover:text-gray-700"
-                }`}
+          )}
+          <button
+            onClick={() => setActiveTab("system")}
+            className={tabClass("system")}
+          >
+            Система
+          </button>
+        </nav>
+      </div>
+
+      {/* Содержимое вкладок */}
+      {activeTab === "profile" && currentUser && (
+        <section className="card p-6">
+          <div className="mb-6 flex items-center gap-4">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-ink-900 text-xl font-semibold text-white">
+              {currentUser.name[0]?.toUpperCase() ||
+                currentUser.username[0]?.toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <h2 className="truncate text-lg font-semibold text-ink-900">
+                {currentUser.name}
+              </h2>
+              <p className="text-sm text-ink-500">@{currentUser.username}</p>
+              <span
+                className={`mt-1.5 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getRoleColor(
+                  currentUser.role
+                )}`}
               >
-                👥 Пользователи
-              </button>
-            )}
-            <button
-              onClick={() => setActiveTab("system")}
-              className={`px-6 py-4 text-sm font-medium transition-colors ${
-                activeTab === "system"
-                  ? "border-b-2 border-blue-500 text-blue-600"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              🔧 Система
-            </button>
+                {getRoleText(currentUser.role)}
+              </span>
+            </div>
           </div>
-        </div>
 
-        {/* Содержимое вкладок */}
-        {activeTab === "profile" && currentUser && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center mb-6">
-              <div className="w-20 h-20 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-2xl mr-6">
-                {currentUser.name[0]?.toUpperCase() ||
-                  currentUser.username[0]?.toUpperCase()}
-              </div>
+          <form onSubmit={handleProfileSubmit} className="space-y-6">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <h2 className="text-2xl font-bold text-gray-900">
-                  {currentUser.name}
-                </h2>
-                <p className="text-gray-600">@{currentUser.username}</p>
-                <span
-                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getRoleColor(
-                    currentUser.role
-                  )} mt-2`}
-                >
-                  {getRoleText(currentUser.role)}
-                </span>
+                <label className="mb-1.5 block text-sm font-medium text-ink-700">
+                  Имя
+                </label>
+                <input
+                  type="text"
+                  value={profileData.name}
+                  onChange={(e) =>
+                    setProfileData({ ...profileData, name: e.target.value })
+                  }
+                  className="input-field"
+                  placeholder="Ваше имя"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-ink-700">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={profileData.email}
+                  onChange={(e) =>
+                    setProfileData({ ...profileData, email: e.target.value })
+                  }
+                  className="input-field"
+                  placeholder="email@example.com"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-ink-700">
+                  Телефон
+                </label>
+                <input
+                  type="tel"
+                  value={profileData.phone}
+                  onChange={(e) =>
+                    setProfileData({ ...profileData, phone: e.target.value })
+                  }
+                  className="input-field"
+                  placeholder="+7 (999) 123-45-67"
+                />
               </div>
             </div>
 
-            <form onSubmit={handleProfileSubmit} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="border-t border-ink-100 pt-6">
+              <h3 className="mb-4 text-base font-semibold text-ink-900">
+                Изменить пароль
+              </h3>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Имя
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
+                    Текущий пароль
                   </label>
                   <input
-                    type="text"
-                    value={profileData.name}
+                    type="password"
+                    value={profileData.currentPassword}
                     onChange={(e) =>
-                      setProfileData({ ...profileData, name: e.target.value })
+                      setProfileData({
+                        ...profileData,
+                        currentPassword: e.target.value,
+                      })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Ваше имя"
+                    className="input-field"
+                    placeholder="Введите текущий пароль"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Email
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
+                    Новый пароль
                   </label>
                   <input
-                    type="email"
-                    value={profileData.email}
+                    type="password"
+                    value={profileData.newPassword}
                     onChange={(e) =>
-                      setProfileData({ ...profileData, email: e.target.value })
+                      setProfileData({
+                        ...profileData,
+                        newPassword: e.target.value,
+                      })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="email@example.com"
+                    className="input-field"
+                    placeholder="Новый пароль"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Телефон
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
+                    Подтвердите пароль
                   </label>
                   <input
-                    type="tel"
-                    value={profileData.phone}
+                    type="password"
+                    value={profileData.confirmPassword}
                     onChange={(e) =>
-                      setProfileData({ ...profileData, phone: e.target.value })
+                      setProfileData({
+                        ...profileData,
+                        confirmPassword: e.target.value,
+                      })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="+7 (999) 123-45-67"
+                    className="input-field"
+                    placeholder="Повторите новый пароль"
                   />
                 </div>
               </div>
+            </div>
 
-              <div className="border-t border-gray-200 pt-6">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">
-                  Изменить пароль
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Текущий пароль
-                    </label>
-                    <input
-                      type="password"
-                      value={profileData.currentPassword}
-                      onChange={(e) =>
-                        setProfileData({
-                          ...profileData,
-                          currentPassword: e.target.value,
-                        })
-                      }
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Введите текущий пароль"
-                    />
-                  </div>
+            <div className="flex justify-end">
+              <button type="submit" className="btn btn-primary">
+                Сохранить изменения
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Новый пароль
-                    </label>
-                    <input
-                      type="password"
-                      value={profileData.newPassword}
-                      onChange={(e) =>
-                        setProfileData({
-                          ...profileData,
-                          newPassword: e.target.value,
-                        })
-                      }
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Новый пароль"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Подтвердите пароль
-                    </label>
-                    <input
-                      type="password"
-                      value={profileData.confirmPassword}
-                      onChange={(e) =>
-                        setProfileData({
-                          ...profileData,
-                          confirmPassword: e.target.value,
-                        })
-                      }
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Повторите новый пароль"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium transition-colors"
-                >
-                  Сохранить изменения
-                </button>
-              </div>
-            </form>
+      {activeTab === "users" && currentUser?.role === "admin" && (
+        <div className="space-y-4">
+          {/* Заголовок и кнопка добавления */}
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-ink-900">
+                Управление пользователями
+              </h2>
+              <p className="text-sm text-ink-500">
+                Создание и редактирование учетных записей
+              </p>
+            </div>
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="btn btn-primary"
+            >
+              <Icon name="plus" className="h-4 w-4" />
+              Добавить пользователя
+            </button>
           </div>
-        )}
 
-        {activeTab === "users" && currentUser?.role === "admin" && (
-          <div className="space-y-6">
-            {/* Заголовок и кнопка добавления */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-gray-900">
-                  Управление пользователями
-                </h2>
-                <p className="text-gray-600">
-                  Создание и редактирование учетных записей
+          {/* Поиск */}
+          <div className="relative max-w-md">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+              <svg
+                className="h-4 w-4 text-ink-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d={SEARCH_PATH}
+                />
+              </svg>
+            </div>
+            <input
+              type="text"
+              placeholder="Поиск пользователей..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="input-field pl-9"
+            />
+          </div>
+
+          {/* Список пользователей */}
+          <div className="card overflow-hidden">
+            {filteredUsers.length === 0 ? (
+              <div className="px-6 py-16 text-center">
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-ink-100 text-ink-500">
+                  <Icon name="users" className="h-6 w-6" />
+                </div>
+                <h3 className="text-base font-semibold text-ink-900">
+                  {searchTerm
+                    ? "Пользователи не найдены"
+                    : "Нет пользователей"}
+                </h3>
+                <p className="mt-1 text-sm text-ink-500">
+                  {searchTerm
+                    ? "Попробуйте изменить поисковый запрос"
+                    : "Создайте первого пользователя для начала работы"}
                 </p>
               </div>
-              <button
-                onClick={() => setShowAddForm(true)}
-                className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white px-6 py-3 rounded-lg font-medium transition-all duration-200 transform hover:-translate-y-1 shadow-lg hover:shadow-xl mt-4 sm:mt-0"
-              >
-                ➕ Добавить пользователя
-              </button>
-            </div>
-
-            {/* Поиск */}
-            <div className="relative max-w-md">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <svg
-                  className="h-5 w-5 text-gray-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                  />
-                </svg>
-              </div>
-              <input
-                type="text"
-                placeholder="Поиск пользователей..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-              />
-            </div>
-
-            {/* Список пользователей */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-              {filteredUsers.length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="text-6xl sm:text-8xl mb-4">👥</div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    {searchTerm
-                      ? "Пользователи не найдены"
-                      : "Нет пользователей"}
-                  </h3>
-                  <p className="text-gray-500">
-                    {searchTerm
-                      ? "Попробуйте изменить поисковый запрос"
-                      : "Создайте первого пользователя для начала работы"}
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Пользователь
-                        </th>
-                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Роль
-                        </th>
-                        <th className="hidden sm:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Контакты
-                        </th>
-                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Статус
-                        </th>
-                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Действия
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {filteredUsers.map((user) => (
-                        <tr key={user.id} className="hover:bg-gray-50">
-                          <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center">
-                              <div className="w-8 sm:w-10 h-8 sm:h-10 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold mr-2 sm:mr-3 text-xs sm:text-base">
-                                {user.name[0]?.toUpperCase() ||
-                                  user.username[0]?.toUpperCase()}
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead className="bg-ink-50">
+                    <tr className="text-xs font-medium uppercase tracking-wide text-ink-500">
+                      <th className="px-3 py-3 text-left font-medium sm:px-5">
+                        Пользователь
+                      </th>
+                      <th className="px-3 py-3 text-left font-medium sm:px-5">
+                        Роль
+                      </th>
+                      <th className="hidden px-3 py-3 text-left font-medium sm:table-cell sm:px-5">
+                        Контакты
+                      </th>
+                      <th className="px-3 py-3 text-left font-medium sm:px-5">
+                        Статус
+                      </th>
+                      <th className="px-3 py-3 text-right font-medium sm:px-5">
+                        Действия
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-ink-100 bg-white">
+                    {filteredUsers.map((user) => (
+                      <tr key={user.id} className="hover:bg-ink-50">
+                        <td className="whitespace-nowrap px-3 py-3 sm:px-5">
+                          <div className="flex items-center">
+                            <div className="mr-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-semibold text-ink-700 sm:mr-3 sm:h-9 sm:w-9 sm:text-sm">
+                              {user.name[0]?.toUpperCase() ||
+                                user.username[0]?.toUpperCase()}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-xs font-medium text-ink-900 sm:text-sm">
+                                {user.name}
                               </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="text-xs sm:text-sm font-medium text-gray-900 truncate">
-                                  {user.name}
-                                </div>
-                                <div className="text-xs text-gray-500 truncate">
-                                  @{user.username}
-                                </div>
-                                {/* Показываем контакты на мобильных */}
-                                <div className="sm:hidden text-xs text-gray-500 mt-1">
-                                  {user.email && <div>📧 {user.email}</div>}
-                                  {user.phone && <div>📱 {user.phone}</div>}
-                                </div>
+                              <div className="truncate text-xs text-ink-500">
+                                @{user.username}
+                              </div>
+                              {/* Показываем контакты на мобильных */}
+                              <div className="mt-1 text-xs text-ink-500 sm:hidden">
+                                {user.email && <div>{user.email}</div>}
+                                {user.phone && <div>{user.phone}</div>}
                               </div>
                             </div>
-                          </td>
-                          <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
-                            <span
-                              className={`inline-flex items-center px-1.5 sm:px-2.5 py-0.5 rounded-full text-xs font-medium ${getRoleColor(
-                                user.role
-                              )}`}
-                            >
-                              <span className="hidden sm:inline">
-                                {getRoleText(user.role)}
-                              </span>
-                              <span className="sm:hidden">
-                                {user.role === "admin"
-                                  ? "А"
-                                  : user.role === "partner"
-                                  ? "П"
-                                  : "У"}
-                              </span>
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-3 sm:px-5">
+                          <span
+                            className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium sm:px-2.5 ${getRoleColor(
+                              user.role
+                            )}`}
+                          >
+                            <span className="hidden sm:inline">
+                              {getRoleText(user.role)}
                             </span>
-                          </td>
-                          <td className="hidden sm:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            <div>
-                              {user.email && <div>📧 {user.email}</div>}
-                              {user.phone && <div>📱 {user.phone}</div>}
-                            </div>
-                          </td>
-                          <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
-                            <span
-                              className={`inline-flex items-center px-1.5 sm:px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            <span className="sm:hidden">
+                              {getRoleShort(user.role)}
+                            </span>
+                          </span>
+                        </td>
+                        <td className="hidden whitespace-nowrap px-3 py-3 text-sm text-ink-500 sm:table-cell sm:px-5">
+                          <div>
+                            {user.email && <div>{user.email}</div>}
+                            {user.phone && <div>{user.phone}</div>}
+                            {!user.email && !user.phone && (
+                              <span className="text-ink-400">—</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-3 sm:px-5">
+                          <span
+                            className={`inline-flex items-center gap-1.5 rounded-full px-1.5 py-0.5 text-xs font-medium sm:px-2.5 ${
+                              user.is_active
+                                ? "bg-emerald-50 text-emerald-700"
+                                : "bg-red-50 text-red-700"
+                            }`}
+                            title={user.is_active ? "Активен" : "Неактивен"}
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-current sm:hidden" />
+                            <span className="hidden sm:inline">
+                              {user.is_active ? "Активен" : "Неактивен"}
+                            </span>
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-3 text-sm sm:px-5">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => handleEdit(user)}
+                              className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-brand-50 hover:text-brand-600"
+                              title="Редактировать"
+                            >
+                              <svg
+                                className="h-4 w-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={1.8}
+                                  d={EDIT_PATH}
+                                />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() =>
+                                toggleUserStatus(user.id, user.is_active)
+                              }
+                              className={`rounded-lg p-1.5 text-ink-400 transition-colors ${
                                 user.is_active
-                                  ? "bg-green-100 text-green-800"
-                                  : "bg-red-100 text-red-800"
+                                  ? "hover:bg-amber-50 hover:text-amber-600"
+                                  : "hover:bg-emerald-50 hover:text-emerald-600"
                               }`}
+                              title={
+                                user.is_active
+                                  ? "Деактивировать"
+                                  : "Активировать"
+                              }
                             >
-                              <span className="hidden sm:inline">
-                                {user.is_active ? "Активен" : "Неактивен"}
-                              </span>
-                              <span className="sm:hidden">
-                                {user.is_active ? "✓" : "✗"}
-                              </span>
-                            </span>
-                          </td>
-                          <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            <div className="flex space-x-1 sm:space-x-2">
+                              <svg
+                                className="h-4 w-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                {user.is_active ? (
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={1.8}
+                                    d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L5.636 5.636"
+                                  />
+                                ) : (
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={1.8}
+                                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                                  />
+                                )}
+                              </svg>
+                            </button>
+                            {user.username !== "admin" && (
                               <button
-                                onClick={() => handleEdit(user)}
-                                className="text-blue-600 hover:text-blue-800 p-1 rounded"
-                                title="Редактировать"
+                                onClick={() => handleDelete(user.id)}
+                                className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                                title="Удалить"
                               >
                                 <svg
-                                  className="w-4 h-4 sm:w-5 sm:h-5"
+                                  className="h-4 w-4"
                                   fill="none"
                                   stroke="currentColor"
                                   viewBox="0 0 24 24"
@@ -629,206 +704,145 @@ export default function SettingsPage() {
                                   <path
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                    strokeWidth={1.8}
+                                    d={TRASH_PATH}
                                   />
                                 </svg>
                               </button>
-                              <button
-                                onClick={() =>
-                                  toggleUserStatus(user.id, user.is_active)
-                                }
-                                className={`p-1 rounded ${
-                                  user.is_active
-                                    ? "text-yellow-600 hover:text-yellow-800"
-                                    : "text-green-600 hover:text-green-800"
-                                }`}
-                                title={
-                                  user.is_active
-                                    ? "Деактивировать"
-                                    : "Активировать"
-                                }
-                              >
-                                <svg
-                                  className="w-4 h-4 sm:w-5 sm:h-5"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  {user.is_active ? (
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2}
-                                      d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L5.636 5.636"
-                                    />
-                                  ) : (
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2}
-                                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                                    />
-                                  )}
-                                </svg>
-                              </button>
-                              {user.username !== "admin" && (
-                                <button
-                                  onClick={() => handleDelete(user.id)}
-                                  className="text-red-600 hover:text-red-800 p-1 rounded"
-                                  title="Удалить"
-                                >
-                                  <svg
-                                    className="w-4 h-4 sm:w-5 sm:h-5"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2}
-                                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                                    />
-                                  </svg>
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {activeTab === "system" && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-6">
-              Системные настройки
-            </h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Информация о системе */}
-              <div className="p-4 bg-gray-50 rounded-lg">
-                <h3 className="font-medium text-gray-900 mb-3">
-                  Информация о системе
-                </h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Версия:</span>
-                    <span className="font-medium">DrevMaster v1.0.0</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">База данных:</span>
-                    <span className="font-medium">SQLite</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Пользователей:</span>
-                    <span className="font-medium">{users.length}</span>
-                  </div>
-                </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
+            )}
+          </div>
+        </div>
+      )}
 
-              {/* Опасная зона */}
-              {currentUser?.role === "admin" && (
-                <div className="p-4 bg-red-50 rounded-lg border border-red-200">
-                  <h3 className="font-medium text-red-900 mb-3">
-                    ⚠️ Опасная зона
-                  </h3>
-                  <p className="text-sm text-red-700 mb-4">
-                    Данные действия необратимы. Будьте осторожны!
-                  </p>
-                  <div className="space-y-3">
+      {activeTab === "system" && (
+        <section className="card p-6">
+          <h2 className="mb-6 text-base font-semibold text-ink-900">
+            Системные настройки
+          </h2>
+
+          <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2">
+            {/* Информация о системе */}
+            <div className="rounded-lg border border-ink-200">
+              <h3 className="border-b border-ink-100 px-4 py-3 text-sm font-semibold text-ink-900">
+                Информация о системе
+              </h3>
+              <dl className="divide-y divide-ink-100 text-sm">
+                <div className="flex justify-between px-4 py-2.5">
+                  <dt className="text-ink-500">Версия</dt>
+                  <dd className="font-medium text-ink-900">
+                    DrevMaster v1.0.0
+                  </dd>
+                </div>
+                <div className="flex justify-between px-4 py-2.5">
+                  <dt className="text-ink-500">База данных</dt>
+                  <dd className="font-medium text-ink-900">SQLite</dd>
+                </div>
+                <div className="flex justify-between px-4 py-2.5">
+                  <dt className="text-ink-500">Пользователей</dt>
+                  <dd className="font-medium text-ink-900">{users.length}</dd>
+                </div>
+              </dl>
+            </div>
+
+            {/* Опасная зона */}
+            {currentUser?.role === "admin" && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+                <h3 className="text-sm font-semibold text-red-800">
+                  Опасная зона
+                </h3>
+                <p className="mt-1 text-sm text-red-700">
+                  Данные действия необратимы. Будьте осторожны!
+                </p>
+                <div className="mt-4 space-y-3">
+                  <div>
                     <input
                       type="password"
                       value={clearDBPassword}
                       onChange={(e) => setClearDBPassword(e.target.value)}
-                      placeholder="Введите пароль"
-                      className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      placeholder="Ваш пароль администратора"
+                      className="input-field border-red-200 text-sm hover:border-red-300 focus:border-red-500 focus:ring-red-100"
                     />
-                    <button
-                      onClick={async () => {
-                        if (clearDBPassword !== "Manuchehr1981") {
-                          alert("Неверный пароль!");
-                          return;
-                        }
-
-                        if (
-                          confirm(
-                            "Вы уверены, что хотите очистить всю базу данных? Это действие необратимо!"
-                          )
-                        ) {
-                          try {
-                            const response = await fetch(
-                              "/api/admin/clear-database",
-                              {
-                                method: "POST",
-                                headers: {
-                                  "Content-Type": "application/json",
-                                },
-                                body: JSON.stringify({
-                                  password: clearDBPassword,
-                                }),
-                              }
-                            );
-                            if (response.ok) {
-                              alert("База данных очищена");
-                              setClearDBPassword("");
-                              window.location.reload();
-                            } else {
-                              const error = await response.json();
-                              alert(
-                                error.error || "Ошибка при очистке базы данных"
-                              );
-                            }
-                          } catch (error) {
-                            alert("Ошибка при очистке базы данных");
-                          }
-                        }
-                      }}
-                      disabled={clearDBPassword !== "Manuchehr1981"}
-                      className={`w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                        clearDBPassword === "Manuchehr1981"
-                          ? "bg-red-600 hover:bg-red-700 text-white"
-                          : "bg-gray-300 text-gray-500 cursor-not-allowed"
-                      }`}
-                    >
-                      🗑️ Очистить базу данных
-                    </button>
+                    <p className="mt-1.5 text-xs text-red-700">
+                      Подтвердите паролем вашей учетной записи администратора
+                    </p>
                   </div>
+                  <button
+                    onClick={async () => {
+                      if (
+                        confirm(
+                          "Вы уверены, что хотите очистить всю базу данных? Это действие необратимо!"
+                        )
+                      ) {
+                        try {
+                          const response = await fetch(
+                            "/api/admin/clear-database",
+                            {
+                              method: "POST",
+                              headers: {
+                                "Content-Type": "application/json",
+                              },
+                              body: JSON.stringify({
+                                password: clearDBPassword,
+                              }),
+                            }
+                          );
+                          if (response.ok) {
+                            alert("База данных очищена");
+                            setClearDBPassword("");
+                            window.location.reload();
+                          } else {
+                            const error = await response.json();
+                            alert(
+                              error.error || "Ошибка при очистке базы данных"
+                            );
+                          }
+                        } catch (error) {
+                          alert("Ошибка при очистке базы данных");
+                        }
+                      }
+                    }}
+                    disabled={!clearDBPassword}
+                    className="btn btn-danger w-full"
+                  >
+                    Очистить базу данных
+                  </button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </section>
+      )}
 
       {/* Модальное окно формы пользователя */}
       {showAddForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-ink-200 bg-white shadow-xl">
             <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-gray-900">
+              <div className="mb-6 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-ink-900">
                   {editingUser
                     ? "Редактировать пользователя"
                     : "Добавить пользователя"}
                 </h3>
                 <button
                   onClick={resetForm}
-                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                  className="rounded-lg p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-600"
                 >
-                  ×
+                  <Icon name="close" className="h-5 w-5" />
                 </button>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Имя *
                   </label>
                   <input
@@ -838,13 +852,13 @@ export default function SettingsPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, name: e.target.value })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="Полное имя"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Логин *
                   </label>
                   <input
@@ -854,13 +868,13 @@ export default function SettingsPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, username: e.target.value })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="Логин пользователя"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Пароль{" "}
                     {editingUser ? "(оставьте пустым, чтобы не менять)" : "*"}
                   </label>
@@ -871,13 +885,13 @@ export default function SettingsPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, password: e.target.value })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="Пароль"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Роль *
                   </label>
                   <select
@@ -889,7 +903,7 @@ export default function SettingsPage() {
                         role: e.target.value as "admin" | "partner" | "user",
                       })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="input-field"
                     title="Выберите роль пользователя"
                   >
                     <option value="user">Пользователь</option>
@@ -899,7 +913,7 @@ export default function SettingsPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Email
                   </label>
                   <input
@@ -908,13 +922,13 @@ export default function SettingsPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, email: e.target.value })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="email@example.com"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Телефон
                   </label>
                   <input
@@ -923,23 +937,20 @@ export default function SettingsPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, phone: e.target.value })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="+7 (999) 123-45-67"
                   />
                 </div>
 
-                <div className="flex space-x-3 pt-4">
+                <div className="flex gap-3 pt-4">
                   <button
                     type="button"
                     onClick={resetForm}
-                    className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="btn btn-secondary flex-1"
                   >
                     Отмена
                   </button>
-                  <button
-                    type="submit"
-                    className="flex-1 px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-                  >
+                  <button type="submit" className="btn btn-primary flex-1">
                     {editingUser ? "Обновить" : "Создать"}
                   </button>
                 </div>

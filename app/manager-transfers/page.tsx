@@ -1,8 +1,12 @@
 "use client";
 import { useState, useEffect } from "react";
+import Icon from "@/components/Icon";
+import { PageHeader } from "@/components/ui";
+import { formatDate, formatMoney } from "@/lib/format";
 
 interface Partner {
   id: number;
+  user_id: number;
   name: string;
   username: string;
 }
@@ -112,256 +116,249 @@ export default function ManagerTransfersPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Загрузка данных...</p>
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <div className="flex items-center justify-center py-24 text-ink-500">
+          <span className="loading-spinner mr-3 text-brand-600" />
+          <span className="text-sm">Загрузка данных...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {/* Заголовок */}
-        <div className="mb-6 sm:mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
-                💸 Переводы
-              </h1>
-              <p className="text-sm sm:text-base text-gray-600">
-                Отправка переводов администратору и партнерам
-              </p>
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      <PageHeader
+        title="Переводы"
+        description="Отправка переводов администратору и партнерам"
+        actions={
+          <button
+            onClick={() => setShowTransferForm(true)}
+            className="btn btn-primary"
+          >
+            <Icon name="plus" className="h-4 w-4" />
+            Новый перевод
+          </button>
+        }
+      />
+
+      {/* Список переводов */}
+      <section className="card overflow-hidden">
+        <div className="card-header">
+          <h2 className="text-base font-semibold text-ink-900">
+            История переводов
+          </h2>
+        </div>
+
+        {transfers.length === 0 ? (
+          <div className="px-6 py-16 text-center">
+            <div className="mx-auto mb-4 inline-flex rounded-lg bg-ink-100 p-3 text-ink-600">
+              <Icon name="transfer" className="h-6 w-6" />
             </div>
+            <h3 className="text-base font-semibold text-ink-900">
+              Переводов пока нет
+            </h3>
+            <p className="mt-1 text-sm text-ink-500">
+              Создайте первый перевод для начала работы
+            </p>
             <button
               onClick={() => setShowTransferForm(true)}
-              className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white px-6 py-3 rounded-lg font-medium transition-all duration-200 transform hover:-translate-y-1 shadow-lg hover:shadow-xl mt-4 sm:mt-0"
+              className="btn btn-primary mt-6"
             >
-              ➕ Новый перевод
+              Создать перевод
             </button>
           </div>
-        </div>
+        ) : (
+          <ul className="divide-y divide-ink-100">
+            {transfers.map((transfer) => (
+              <li
+                key={transfer.id}
+                className="px-6 py-4 transition-colors hover:bg-ink-50"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+                  <div className="mb-3 min-w-0 sm:mb-0">
+                    <h3 className="text-sm font-medium text-ink-900">
+                      Получатель: {transfer.to_user_name}
+                    </h3>
+                    <p className="mt-1 text-xl font-semibold tracking-tight text-ink-900">
+                      {formatMoney(transfer.amount)}
+                    </p>
+                    {transfer.description && (
+                      <p className="mt-1 text-sm text-ink-500">
+                        {transfer.description}
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs text-ink-400">
+                      {formatDate(transfer.created_at)}
+                    </p>
+                  </div>
+                  <div className="flex items-center">
+                    <span
+                      className={`status-badge ${
+                        transfer.status === "pending"
+                          ? "status-warning"
+                          : transfer.status === "approved"
+                          ? "status-success"
+                          : "status-danger"
+                      }`}
+                    >
+                      {transfer.status === "pending"
+                        ? "На рассмотрении"
+                        : transfer.status === "approved"
+                        ? "Одобрено"
+                        : "Отклонено"}
+                    </span>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
-        {/* Список переводов */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="p-6">
-            <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-4">
-              История переводов
-            </h2>
-
-            {transfers.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="text-6xl sm:text-8xl mb-4">💸</div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Переводов пока нет
+      {/* Модальное окно формы */}
+      {showTransferForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-ink-200 bg-white shadow-xl">
+            <div className="p-6">
+              <div className="mb-6 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-ink-900">
+                  Новый перевод
                 </h3>
-                <p className="text-gray-500 mb-6">
-                  Создайте первый перевод для начала работы
-                </p>
                 <button
-                  onClick={() => setShowTransferForm(true)}
-                  className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+                  onClick={() => setShowTransferForm(false)}
+                  className="rounded-lg p-1 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-600"
+                  aria-label="Закрыть"
                 >
-                  Создать перевод
+                  <Icon name="close" className="h-5 w-5" />
                 </button>
               </div>
-            ) : (
-              <div className="space-y-4">
-                {transfers.map((transfer) => (
-                  <div
-                    key={transfer.id}
-                    className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-colors"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-                      <div className="mb-3 sm:mb-0">
-                        <h3 className="text-sm sm:text-base font-semibold text-gray-900">
-                          Получатель: {transfer.to_user_name}
-                        </h3>
-                        <p className="text-xl sm:text-2xl font-bold text-blue-600 mt-1">
-                          ${transfer.amount.toLocaleString()}
-                        </p>
-                        {transfer.description && (
-                          <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                            {transfer.description}
-                          </p>
-                        )}
-                        <p className="text-xs text-gray-400 mt-1">
-                          {new Date(transfer.created_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <div className="flex items-center">
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-medium ${
-                            transfer.status === "pending"
-                              ? "bg-yellow-100 text-yellow-800"
-                              : transfer.status === "approved"
-                              ? "bg-green-100 text-green-800"
-                              : "bg-red-100 text-red-800"
-                          }`}
-                        >
-                          {transfer.status === "pending"
-                            ? "На рассмотрении"
-                            : transfer.status === "approved"
-                            ? "Одобрено"
-                            : "Отклонено"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
 
-        {/* Модальное окно формы */}
-        {showTransferForm && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xl font-bold text-gray-900">
-                    Новый перевод
-                  </h3>
-                  <button
-                    onClick={() => setShowTransferForm(false)}
-                    className="text-gray-400 hover:text-gray-600 text-2xl"
-                  >
-                    ×
-                  </button>
-                </div>
-
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Получатель *
-                    </label>
-                    <div className="space-y-2">
-                      <label className="flex items-center">
-                        <input
-                          type="radio"
-                          name="recipient"
-                          value="admin"
-                          checked={transferForm.to_user_type === "admin"}
-                          onChange={(e) =>
-                            setTransferForm({
-                              ...transferForm,
-                              to_user_type: e.target.value,
-                              to_user_id: "",
-                            })
-                          }
-                          className="mr-2"
-                        />
-                        Администратор
-                      </label>
-                      <label className="flex items-center">
-                        <input
-                          type="radio"
-                          name="recipient"
-                          value="partner"
-                          checked={transferForm.to_user_type === "partner"}
-                          onChange={(e) =>
-                            setTransferForm({
-                              ...transferForm,
-                              to_user_type: e.target.value,
-                              to_user_id: "",
-                            })
-                          }
-                          className="mr-2"
-                        />
-                        Партнер
-                      </label>
-                    </div>
-                  </div>
-
-                  {transferForm.to_user_type === "partner" && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Выберите партнера *
-                      </label>
-                      <select
-                        required
-                        value={transferForm.to_user_id}
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-ink-700">
+                    Получатель *
+                  </label>
+                  <div className="space-y-2">
+                    <label className="flex items-center text-sm text-ink-800">
+                      <input
+                        type="radio"
+                        name="recipient"
+                        value="admin"
+                        checked={transferForm.to_user_type === "admin"}
                         onChange={(e) =>
                           setTransferForm({
                             ...transferForm,
-                            to_user_id: e.target.value,
+                            to_user_type: e.target.value,
+                            to_user_id: "",
                           })
                         }
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      >
-                        <option value="">Выберите партнера</option>
-                        {partners.map((partner) => (
-                          <option key={partner.id} value={partner.id}>
-                            {partner.name} (@{partner.username})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Сумма ($) *
+                        className="mr-2 accent-brand-600"
+                      />
+                      Администратор
                     </label>
-                    <input
-                      type="number"
-                      min="0.01"
-                      step="0.01"
+                    <label className="flex items-center text-sm text-ink-800">
+                      <input
+                        type="radio"
+                        name="recipient"
+                        value="partner"
+                        checked={transferForm.to_user_type === "partner"}
+                        onChange={(e) =>
+                          setTransferForm({
+                            ...transferForm,
+                            to_user_type: e.target.value,
+                            to_user_id: "",
+                          })
+                        }
+                        className="mr-2 accent-brand-600"
+                      />
+                      Партнер
+                    </label>
+                  </div>
+                </div>
+
+                {transferForm.to_user_type === "partner" && (
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-ink-700">
+                      Выберите партнера *
+                    </label>
+                    <select
                       required
-                      value={transferForm.amount || ""}
+                      value={transferForm.to_user_id}
                       onChange={(e) =>
                         setTransferForm({
                           ...transferForm,
-                          amount: parseFloat(e.target.value) || 0,
+                          to_user_id: e.target.value,
                         })
                       }
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
-                      placeholder="0.00"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Описание
-                    </label>
-                    <textarea
-                      value={transferForm.description}
-                      onChange={(e) =>
-                        setTransferForm({
-                          ...transferForm,
-                          description: e.target.value,
-                        })
-                      }
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      rows={3}
-                      placeholder="Цель перевода..."
-                    />
-                  </div>
-
-                  <div className="flex space-x-3 pt-4">
-                    <button
-                      type="button"
-                      onClick={() => setShowTransferForm(false)}
-                      className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                      className="input-field"
                     >
-                      Отмена
-                    </button>
-                    <button
-                      type="submit"
-                      className="flex-1 px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-                    >
-                      Отправить
-                    </button>
+                      <option value="">Выберите партнера</option>
+                      {partners.map((partner) => (
+                        // Перевод адресуется пользователю, а не записи партнера
+                        <option key={partner.id} value={partner.user_id}>
+                          {partner.name} (@{partner.username})
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                </form>
-              </div>
+                )}
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-ink-700">
+                    Сумма ($) *
+                  </label>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    required
+                    value={transferForm.amount || ""}
+                    onChange={(e) =>
+                      setTransferForm({
+                        ...transferForm,
+                        amount: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                    className="input-field"
+                    placeholder="0.00"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-ink-700">
+                    Описание
+                  </label>
+                  <textarea
+                    value={transferForm.description}
+                    onChange={(e) =>
+                      setTransferForm({
+                        ...transferForm,
+                        description: e.target.value,
+                      })
+                    }
+                    className="input-field"
+                    rows={3}
+                    placeholder="Цель перевода..."
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowTransferForm(false)}
+                    className="btn btn-secondary flex-1"
+                  >
+                    Отмена
+                  </button>
+                  <button type="submit" className="btn btn-primary flex-1">
+                    Отправить
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

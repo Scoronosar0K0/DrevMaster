@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
+import Icon, { type IconName } from "@/components/Icon";
 
 interface User {
   id: number;
@@ -11,244 +12,270 @@ interface User {
   email?: string;
 }
 
-export default function Navigation() {
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+interface NavItem {
+  href: string;
+  label: string;
+  icon: IconName;
+}
+
+interface NavGroup {
+  title: string;
+  items: NavItem[];
+}
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: "Администратор",
+  manager: "Менеджер",
+  partner: "Партнер",
+  user: "Пользователь",
+};
+
+// Меню повторяет правила доступа из middleware.ts
+function getMenu(role: string): NavGroup[] {
+  if (role === "manager") {
+    return [
+      {
+        title: "Обзор",
+        items: [{ href: "/manager", label: "Главная", icon: "home" }],
+      },
+      {
+        title: "Работа",
+        items: [
+          { href: "/manager/warehouse", label: "Мой склад", icon: "archive" },
+          { href: "/manager/cash", label: "Мои финансы", icon: "wallet" },
+          { href: "/manager/transfers", label: "Переводы", icon: "transfer" },
+          { href: "/manager-transfers", label: "Перевод партнеру", icon: "users" },
+        ],
+      },
+      {
+        title: "Система",
+        items: [{ href: "/settings", label: "Настройки", icon: "settings" }],
+      },
+    ];
+  }
+
+  const isAdmin = role === "admin";
+  return [
+    {
+      title: "Обзор",
+      items: [
+        { href: "/", label: "Главная", icon: "home" },
+        ...(isAdmin
+          ? [{ href: "/analytics", label: "Аналитика", icon: "chart" as const }]
+          : []),
+      ],
+    },
+    {
+      title: "Операции",
+      items: [
+        { href: "/orders", label: "Заказы", icon: "cube" },
+        { href: "/cash", label: "Касса", icon: "wallet" },
+        { href: "/partners", label: "Партнеры", icon: "users" },
+        { href: "/suppliers", label: "Поставщики", icon: "building" },
+        ...(isAdmin
+          ? [{ href: "/managers", label: "Менеджеры", icon: "user" as const }]
+          : []),
+      ],
+    },
+    {
+      title: "Система",
+      items: [
+        { href: "/history", label: "История", icon: "clock" },
+        { href: "/settings", label: "Настройки", icon: "settings" },
+      ],
+    },
+  ];
+}
+
+function Logo() {
+  return (
+    <div className="flex items-center gap-2.5">
+      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-sm font-semibold text-white">
+        DM
+      </div>
+      <div className="leading-tight">
+        <div className="text-[15px] font-semibold text-white">DrevMaster</div>
+        <div className="text-[11px] text-ink-400">Торговля древесиной</div>
+      </div>
+    </div>
+  );
+}
+
+export default function Navigation({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const [user, setUser] = useState<User | null>(null);
-  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const pathname = usePathname();
-  const router = useRouter();
+  const isLoginPage = pathname.startsWith("/login");
 
   useEffect(() => {
-    const userData = localStorage.getItem("drevmaster_user");
-    if (userData) {
-      setUser(JSON.parse(userData));
+    if (isLoginPage) return;
+    try {
+      const userData = localStorage.getItem("drevmaster_user");
+      if (userData) setUser(JSON.parse(userData));
+    } catch {
+      // поврежденные данные — дождемся ответа сервера
     }
-  }, []);
+    // Роль и имя берем с сервера: localStorage может быть устаревшим
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.user) {
+          setUser(data.user);
+          localStorage.setItem("drevmaster_user", JSON.stringify(data.user));
+        }
+      })
+      .catch(() => {});
+  }, [isLoginPage]);
 
   // Закрываем мобильное меню при изменении маршрута
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [pathname]);
 
-  const menuItems = [
-    { href: "/", label: "Главная", icon: "🏠" },
-    { href: "/partners", label: "Партнеры", icon: "🤝" },
-    { href: "/cash", label: "Касса", icon: "💰" },
-    { href: "/suppliers", label: "Поставщики", icon: "🏭" },
-    { href: "/orders", label: "Заказы", icon: "📦" },
-    ...(user?.role === "admin"
-      ? [
-          { href: "/managers", label: "Менеджеры", icon: "👥" },
-          { href: "/analytics", label: "Аналитика", icon: "📊" },
-        ]
-      : []),
-    ...(user?.role === "manager"
-      ? [{ href: "/manager-transfers", label: "Переводы", icon: "💸" }]
-      : []),
-    { href: "/settings", label: "Настройки", icon: "⚙️" },
-    { href: "/history", label: "История", icon: "📈" },
-  ];
+  if (isLoginPage) return <>{children}</>;
 
-  const isActive = (href: string) => pathname === href;
+  const menu = user ? getMenu(user.role) : [];
+  const homeHref = user?.role === "manager" ? "/manager" : "/";
+
+  const isActive = (href: string) =>
+    href === "/" || href === "/manager"
+      ? pathname === href
+      : pathname === href || pathname.startsWith(href + "/");
 
   const handleLogout = async () => {
     try {
       await fetch("/api/auth/login", { method: "DELETE" });
-      localStorage.removeItem("drevmaster_user");
-      localStorage.removeItem("drevmaster_token");
-      router.push("/login");
     } catch (error) {
       console.error("Ошибка выхода:", error);
     }
+    localStorage.removeItem("drevmaster_user");
+    localStorage.removeItem("drevmaster_token");
+    // Полная перезагрузка сбрасывает клиентский кэш страниц прошлой сессии
+    window.location.href = "/login";
   };
 
-  return (
-    <>
-      {/* Основная навигация */}
-      <nav className="bg-white shadow-lg border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            {/* Логотип */}
-            <div className="flex items-center">
-              <Link href="/" className="flex items-center space-x-2">
-                <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-lg">
-                  D
-                </div>
-                <span className="text-xl font-bold text-gray-900">
-                  DrevMaster
-                </span>
-              </Link>
-            </div>
+  const initials = (user?.name || user?.username || "?")
+    .split(" ")
+    .map((part) => part[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 
-            {/* Десктопное меню */}
-            <div className="hidden md:flex items-center space-x-1">
-              {menuItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center space-x-2 ${
-                    isActive(item.href)
-                      ? "bg-blue-100 text-blue-700 shadow-sm"
-                      : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
-                  }`}
-                >
-                  <span className="text-lg">{item.icon}</span>
-                  <span className="hidden lg:block">{item.label}</span>
-                </Link>
-              ))}
-            </div>
+  const sidebar = (
+    <div className="flex h-full flex-col bg-ink-950">
+      <div className="flex h-16 items-center px-5">
+        <Link href={homeHref}>
+          <Logo />
+        </Link>
+      </div>
 
-            {/* Пользователь и мобильное меню */}
-            <div className="flex items-center space-x-3">
-              {/* Пользователь */}
-              {user && (
-                <div className="relative">
-                  <button
-                    onClick={() => setShowUserMenu(!showUserMenu)}
-                    className="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-50 transition-colors"
+      <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-4">
+        {menu.map((group) => (
+          <div key={group.title}>
+            <div className="px-3 pb-2 text-[11px] font-medium uppercase tracking-wider text-ink-500">
+              {group.title}
+            </div>
+            <div className="space-y-0.5">
+              {group.items.map((item) => {
+                const active = isActive(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                      active
+                        ? "bg-white/10 text-white"
+                        : "text-ink-300 hover:bg-white/5 hover:text-white"
+                    }`}
                   >
-                    <div className="w-8 h-8 bg-gradient-to-r from-green-400 to-blue-500 rounded-full flex items-center justify-center text-white font-semibold text-sm">
-                      {user.name
-                        ? user.name[0].toUpperCase()
-                        : user.username[0].toUpperCase()}
-                    </div>
-                    <div className="hidden sm:block text-left">
-                      <div className="text-sm font-medium text-gray-900">
-                        {user.name || user.username}
-                      </div>
-                      <div className="text-xs text-gray-500 capitalize">
-                        {user.role}
-                      </div>
-                    </div>
-                    <svg
-                      className={`w-4 h-4 text-gray-400 transition-transform ${
-                        showUserMenu ? "rotate-180" : ""
-                      }`}
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 9l-7 7-7-7"
-                      />
-                    </svg>
-                  </button>
-
-                  {/* Выпадающее меню пользователя */}
-                  {showUserMenu && (
-                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg ring-1 ring-gray-200 z-50 animate-slideInDown">
-                      <div className="p-3 border-b border-gray-100">
-                        <div className="text-sm font-medium text-gray-900">
-                          {user.name || user.username}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {user.email}
-                        </div>
-                      </div>
-                      <div className="py-1">
-                        <Link
-                          href="/settings"
-                          className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                          onClick={() => setShowUserMenu(false)}
-                        >
-                          ⚙️ Настройки
-                        </Link>
-                        <button
-                          onClick={handleLogout}
-                          className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                        >
-                          🚪 Выйти
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Кнопка мобильного меню */}
-              <button
-                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                className="md:hidden p-2 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-colors"
-                title="Открыть меню"
-              >
-                <svg
-                  className={`w-6 h-6 transition-transform ${
-                    isMobileMenuOpen ? "rotate-45" : ""
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  {isMobileMenuOpen ? (
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
+                    <Icon
+                      name={item.icon}
+                      className={`h-5 w-5 ${active ? "text-brand-200" : "text-ink-400"}`}
                     />
-                  ) : (
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 6h16M4 12h16M4 18h16"
-                    />
-                  )}
-                </svg>
-              </button>
+                    {item.label}
+                  </Link>
+                );
+              })}
             </div>
           </div>
-        </div>
-
-        {/* Мобильное меню */}
-        <div
-          className={`md:hidden transition-all duration-300 ease-in-out ${
-            isMobileMenuOpen
-              ? "max-h-screen opacity-100 visible"
-              : "max-h-0 opacity-0 invisible overflow-hidden"
-          }`}
-        >
-          <div className="px-4 pt-2 pb-4 space-y-1 bg-gray-50 border-t border-gray-200">
-            {menuItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-base font-medium transition-all duration-200 ${
-                  isActive(item.href)
-                    ? "bg-blue-100 text-blue-700 shadow-sm"
-                    : "text-gray-700 hover:text-gray-900 hover:bg-white"
-                }`}
-                onClick={() => setIsMobileMenuOpen(false)}
-              >
-                <span className="text-xl">{item.icon}</span>
-                <span>{item.label}</span>
-                {isActive(item.href) && (
-                  <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
-                )}
-              </Link>
-            ))}
-          </div>
-        </div>
+        ))}
       </nav>
 
-      {/* Оверлей для закрытия меню */}
+      {user && (
+        <div className="border-t border-white/10 p-3">
+          <div className="flex items-center gap-3 rounded-lg px-2 py-2">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink-800 text-xs font-semibold text-ink-200">
+              {initials}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-medium text-white">
+                {user.name || user.username}
+              </div>
+              <div className="truncate text-xs text-ink-400">
+                {ROLE_LABELS[user.role] || user.role}
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              title="Выйти"
+              aria-label="Выйти"
+              className="rounded-md p-2 text-ink-400 transition-colors hover:bg-white/5 hover:text-white"
+            >
+              <Icon name="logout" className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen">
+      {/* Боковая панель для десктопа */}
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 lg:block">
+        {sidebar}
+      </aside>
+
+      {/* Верхняя панель для мобильных */}
+      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-ink-800 bg-ink-950 px-4 lg:hidden">
+        <Link href={homeHref}>
+          <Logo />
+        </Link>
+        <button
+          onClick={() => setIsMobileMenuOpen(true)}
+          className="rounded-md p-2 text-ink-300 hover:bg-white/5 hover:text-white"
+          aria-label="Открыть меню"
+        >
+          <Icon name="menu" className="h-6 w-6" />
+        </button>
+      </header>
+
+      {/* Выдвижное меню для мобильных */}
       {isMobileMenuOpen && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-25 z-40 md:hidden"
-          onClick={() => setIsMobileMenuOpen(false)}
-        />
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div
+            className="absolute inset-0 bg-ink-950/60 animate-fadeIn"
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+          <div className="absolute inset-y-0 left-0 w-72 max-w-[85%] animate-fadeIn">
+            {sidebar}
+            <button
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="absolute right-3 top-4 rounded-md p-1.5 text-ink-400 hover:bg-white/5 hover:text-white"
+              aria-label="Закрыть меню"
+            >
+              <Icon name="close" className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
       )}
 
-      {/* Обработчик клика вне меню пользователя */}
-      {showUserMenu && (
-        <div
-          className="fixed inset-0 z-30"
-          onClick={() => setShowUserMenu(false)}
-        />
-      )}
-    </>
+      <main className="lg:pl-64">{children}</main>
+    </div>
   );
 }

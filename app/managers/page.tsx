@@ -1,5 +1,14 @@
 "use client";
 import { useState, useEffect } from "react";
+import Icon from "@/components/Icon";
+import { PageHeader } from "@/components/ui";
+import { formatDate, formatMoney } from "@/lib/format";
+
+const SEARCH_PATH = "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z";
+const EDIT_PATH =
+  "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z";
+const TRASH_PATH =
+  "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16";
 
 interface Manager {
   id: number;
@@ -267,459 +276,381 @@ export default function ManagersPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Загрузка менеджеров...</p>
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <div className="flex items-center justify-center py-24 text-ink-500">
+          <span className="loading-spinner mr-3 text-brand-600" />
+          <span className="text-sm">Загрузка менеджеров...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {/* Заголовок */}
-        <div className="mb-6 sm:mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
-                👥 Менеджеры
-              </h1>
-              <p className="text-sm sm:text-base text-gray-600">
-                Управление менеджерами компании
-              </p>
-            </div>
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      <PageHeader
+        title="Менеджеры"
+        description="Управление менеджерами компании"
+        actions={
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="btn btn-primary"
+          >
+            <Icon name="plus" className="h-4 w-4" />
+            Добавить менеджера
+          </button>
+        }
+      />
+
+      {/* Поиск */}
+      <div className="relative mb-6 max-w-md">
+        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+          <svg
+            className="h-4 w-4 text-ink-400"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d={SEARCH_PATH}
+            />
+          </svg>
+        </div>
+        <input
+          type="text"
+          placeholder="Поиск менеджеров..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="input-field pl-9"
+        />
+      </div>
+
+      {/* Список менеджеров */}
+      {filteredManagers.length === 0 ? (
+        <div className="card px-6 py-16 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-ink-100 text-ink-500">
+            <Icon name="users" className="h-6 w-6" />
+          </div>
+          <h3 className="text-base font-semibold text-ink-900">
+            {searchTerm ? "Менеджеры не найдены" : "Нет менеджеров"}
+          </h3>
+          <p className="mt-1 text-sm text-ink-500">
+            {searchTerm
+              ? "Попробуйте изменить поисковый запрос"
+              : "Добавьте первого менеджера для начала работы"}
+          </p>
+          {!searchTerm && (
             <button
               onClick={() => setShowAddForm(true)}
-              className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white px-6 py-3 rounded-lg font-medium transition-all duration-200 transform hover:-translate-y-1 shadow-lg hover:shadow-xl mt-4 sm:mt-0"
+              className="btn btn-primary mt-6"
             >
-              ➕ Добавить менеджера
+              <Icon name="plus" className="h-4 w-4" />
+              Добавить первого менеджера
             </button>
-          </div>
-
-          {/* Поиск */}
-          <div className="relative max-w-md">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <svg
-                className="h-5 w-5 text-gray-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
-            </div>
-            <input
-              type="text"
-              placeholder="Поиск менеджеров..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-            />
-          </div>
-        </div>
-
-        {/* Список менеджеров */}
-        {filteredManagers.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="text-6xl sm:text-8xl mb-4">👥</div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              {searchTerm ? "Менеджеры не найдены" : "Нет менеджеров"}
-            </h3>
-            <p className="text-gray-500 mb-6">
-              {searchTerm
-                ? "Попробуйте изменить поисковый запрос"
-                : "Добавьте первого менеджера для начала работы"}
-            </p>
-            {!searchTerm && (
-              <button
-                onClick={() => setShowAddForm(true)}
-                className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium transition-colors"
-              >
-                Добавить первого менеджера
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredManagers.map((manager, index) => (
-              <div
-                key={manager.id}
-                className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1"
-                style={{
-                  animationDelay: `${index * 100}ms`,
-                  animation: "slideInUp 0.6s ease-out forwards",
-                }}
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center">
-                    <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-lg mr-3">
-                      {manager.name[0].toUpperCase()}
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">
-                        {manager.name}
-                      </h3>
-                      <p className="text-sm text-gray-500">
-                        @{manager.username}
-                      </p>
-                      <div className="flex items-center mt-1">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                            manager.is_active
-                              ? "bg-green-100 text-green-800"
-                              : "bg-red-100 text-red-800"
-                          }`}
-                        >
-                          {manager.is_active ? "Активен" : "Неактивен"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex space-x-1">
-                    <button
-                      onClick={() => toggleActive(manager)}
-                      className={`p-2 rounded-lg transition-colors ${
-                        manager.is_active
-                          ? "text-red-600 hover:text-red-800 hover:bg-red-50"
-                          : "text-green-600 hover:text-green-800 hover:bg-green-50"
-                      }`}
-                      title={
-                        manager.is_active ? "Деактивировать" : "Активировать"
-                      }
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        {manager.is_active ? (
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L18 12M6 6l6 6"
-                          />
-                        ) : (
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                          />
-                        )}
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => handleEdit(manager)}
-                      className="text-blue-600 hover:text-blue-800 p-2 hover:bg-blue-50 rounded-lg transition-colors"
-                      title="Редактировать"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                        />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedManager(manager);
-                        setTakeMoneyForm({ amount: 0, description: "" });
-                        setShowTakeMoneyDialog(true);
-                      }}
-                      className="text-green-600 hover:text-green-800 p-2 hover:bg-green-50 rounded-lg transition-colors"
-                      title="Взять деньги"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"
-                        />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => handleDelete(manager.id)}
-                      className="text-red-600 hover:text-red-800 p-2 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Удалить"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  {manager.email && (
-                    <div className="flex items-center text-sm text-gray-600">
-                      <svg
-                        className="w-4 h-4 mr-2"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                        />
-                      </svg>
-                      {manager.email}
-                    </div>
-                  )}
-                  {manager.phone && (
-                    <div className="flex items-center text-sm text-gray-600">
-                      <svg
-                        className="w-4 h-4 mr-2"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"
-                        />
-                      </svg>
-                      {manager.phone}
-                    </div>
-                  )}
-                  <div className="flex items-center text-sm">
-                    <svg
-                      className="w-4 h-4 mr-2"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"
-                      />
-                    </svg>
-                    <span
-                      className={`font-semibold ${
-                        manager.debt > 0 ? "text-red-600" : "text-green-600"
-                      }`}
-                    >
-                      Долг: ${manager.debt.toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex items-center text-sm text-gray-500">
-                    <svg
-                      className="w-4 h-4 mr-2"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M8 7V3a1 1 0 011-1h6a1 1 0 011 1v4h-8zM3 9a1 1 0 011-1h16a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V9z"
-                      />
-                    </svg>
-                    {new Date(manager.created_at).toLocaleDateString("ru-RU")}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Секция запросов на переводы */}
-        <div className="mt-12">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                💸 Запросы на переводы
-              </h2>
-              <p className="text-gray-600">
-                Заявки от менеджеров на перевод средств
-              </p>
-            </div>
-          </div>
-
-          {transfersLoading ? (
-            <div className="text-center py-8">
-              <div className="text-lg">Загрузка переводов...</div>
-            </div>
-          ) : transfers.length === 0 ? (
-            <div className="text-center py-12 bg-white rounded-xl shadow-sm border border-gray-200">
-              <div className="text-6xl mb-4">💸</div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Нет запросов на переводы
-              </h3>
-              <p className="text-gray-500">
-                Все заявки менеджеров на переводы будут отображаться здесь
-              </p>
-            </div>
-          ) : (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Менеджер
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Получатель
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Сумма
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Описание
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Дата
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Статус
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Действия
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {transfers.map((transfer) => (
-                      <tr key={transfer.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">
-                            {transfer.from_manager_name}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            @{transfer.from_manager_username}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {transfer.to_user_name}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          ${transfer.amount.toFixed(2)}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
-                          {transfer.description || "—"}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {new Date(transfer.created_at).toLocaleDateString(
-                            "ru-RU"
-                          )}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span
-                            className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                              transfer.status === "pending"
-                                ? "bg-yellow-100 text-yellow-800"
-                                : transfer.status === "approved"
-                                ? "bg-green-100 text-green-800"
-                                : "bg-red-100 text-red-800"
-                            }`}
-                          >
-                            {transfer.status === "pending"
-                              ? "Ожидает"
-                              : transfer.status === "approved"
-                              ? "Одобрен"
-                              : "Отклонен"}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                          {transfer.status === "pending" ? (
-                            <div className="flex space-x-2">
-                              <button
-                                onClick={() =>
-                                  handleTransferAction(transfer.id, "approved")
-                                }
-                                className="text-green-600 hover:text-green-900 transition-colors"
-                              >
-                                ✓ Одобрить
-                              </button>
-                              <button
-                                onClick={() =>
-                                  handleTransferAction(transfer.id, "rejected")
-                                }
-                                className="text-red-600 hover:text-red-900 transition-colors"
-                              >
-                                ✗ Отклонить
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="text-gray-400">
-                              {transfer.approved_by_name && (
-                                <>Обработал: {transfer.approved_by_name}</>
-                              )}
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
           )}
         </div>
-      </div>
+      ) : (
+        <div className="card overflow-hidden">
+          <div className="hidden grid-cols-12 gap-4 border-b border-ink-100 bg-ink-50 px-5 py-3 text-xs font-medium uppercase tracking-wide text-ink-500 lg:grid">
+            <div className="col-span-3">Менеджер</div>
+            <div className="col-span-3">Контакты</div>
+            <div className="col-span-2">Статус</div>
+            <div className="col-span-2 text-right">Долг</div>
+            <div className="col-span-2 text-right">Действия</div>
+          </div>
+          <ul className="divide-y divide-ink-100">
+            {filteredManagers.map((manager) => (
+              <li
+                key={manager.id}
+                className="grid grid-cols-1 gap-3 px-5 py-4 transition-colors hover:bg-ink-50 lg:grid-cols-12 lg:items-center lg:gap-4"
+              >
+                <div className="flex min-w-0 items-center gap-3 lg:col-span-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ink-100 text-sm font-semibold text-ink-700">
+                    {manager.name[0].toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-ink-900">
+                      {manager.name}
+                    </div>
+                    <div className="truncate text-xs text-ink-500">
+                      @{manager.username}
+                    </div>
+                    <div className="text-xs text-ink-400">
+                      Добавлен {formatDate(manager.created_at)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="min-w-0 space-y-0.5 text-sm text-ink-500 lg:col-span-3">
+                  {manager.email && (
+                    <div className="truncate">{manager.email}</div>
+                  )}
+                  {manager.phone && (
+                    <div className="truncate">{manager.phone}</div>
+                  )}
+                  {!manager.email && !manager.phone && (
+                    <div className="text-ink-400">—</div>
+                  )}
+                </div>
+
+                <div className="lg:col-span-2">
+                  <span
+                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                      manager.is_active
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-ink-100 text-ink-600"
+                    }`}
+                  >
+                    {manager.is_active ? "Активен" : "Неактивен"}
+                  </span>
+                </div>
+
+                <div className="flex items-baseline justify-between gap-2 lg:col-span-2 lg:block lg:text-right">
+                  <span className="text-xs text-ink-500 lg:hidden">Долг</span>
+                  <span
+                    className={`text-sm font-semibold ${
+                      manager.debt > 0 ? "text-red-600" : "text-ink-400"
+                    }`}
+                  >
+                    {formatMoney(manager.debt)}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1 lg:col-span-2 lg:justify-end">
+                  <button
+                    onClick={() => toggleActive(manager)}
+                    className={`rounded-lg p-1.5 text-ink-400 transition-colors ${
+                      manager.is_active
+                        ? "hover:bg-red-50 hover:text-red-600"
+                        : "hover:bg-emerald-50 hover:text-emerald-600"
+                    }`}
+                    title={
+                      manager.is_active ? "Деактивировать" : "Активировать"
+                    }
+                  >
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      {manager.is_active ? (
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={1.8}
+                          d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L18 12M6 6l6 6"
+                        />
+                      ) : (
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={1.8}
+                          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      )}
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => handleEdit(manager)}
+                    className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-brand-50 hover:text-brand-600"
+                    title="Редактировать"
+                  >
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.8}
+                        d={EDIT_PATH}
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedManager(manager);
+                      setTakeMoneyForm({ amount: 0, description: "" });
+                      setShowTakeMoneyDialog(true);
+                    }}
+                    className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-emerald-50 hover:text-emerald-600"
+                    title="Взять деньги"
+                  >
+                    <Icon name="wallet" className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(manager.id)}
+                    className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                    title="Удалить"
+                  >
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.8}
+                        d={TRASH_PATH}
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Секция запросов на переводы */}
+      <section className="card mt-8 overflow-hidden">
+        <div className="border-b border-ink-100 px-5 py-4">
+          <h2 className="text-base font-semibold text-ink-900">
+            Запросы на переводы
+          </h2>
+          <p className="text-xs text-ink-500">
+            Заявки от менеджеров на перевод средств
+          </p>
+        </div>
+
+        {transfersLoading ? (
+          <div className="flex items-center justify-center py-10 text-ink-500">
+            <span className="loading-spinner mr-3 text-brand-600" />
+            <span className="text-sm">Загрузка переводов...</span>
+          </div>
+        ) : transfers.length === 0 ? (
+          <div className="px-6 py-12 text-center">
+            <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-ink-100 text-ink-500">
+              <Icon name="transfer" className="h-5 w-5" />
+            </div>
+            <h3 className="text-sm font-semibold text-ink-900">
+              Нет запросов на переводы
+            </h3>
+            <p className="mt-1 text-sm text-ink-500">
+              Все заявки менеджеров на переводы будут отображаться здесь
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead className="bg-ink-50">
+                <tr className="text-xs font-medium uppercase tracking-wide text-ink-500">
+                  <th className="px-5 py-3 text-left font-medium">Менеджер</th>
+                  <th className="px-5 py-3 text-left font-medium">
+                    Получатель
+                  </th>
+                  <th className="px-5 py-3 text-right font-medium">Сумма</th>
+                  <th className="px-5 py-3 text-left font-medium">Описание</th>
+                  <th className="px-5 py-3 text-left font-medium">Дата</th>
+                  <th className="px-5 py-3 text-left font-medium">Статус</th>
+                  <th className="px-5 py-3 text-left font-medium">Действия</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-ink-100 bg-white">
+                {transfers.map((transfer) => (
+                  <tr key={transfer.id} className="hover:bg-ink-50">
+                    <td className="whitespace-nowrap px-5 py-3">
+                      <div className="text-sm font-medium text-ink-900">
+                        {transfer.from_manager_name}
+                      </div>
+                      <div className="text-xs text-ink-500">
+                        @{transfer.from_manager_username}
+                      </div>
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-3 text-sm text-ink-900">
+                      {transfer.to_user_name}
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-3 text-right text-sm font-semibold text-ink-900">
+                      {formatMoney(transfer.amount)}
+                    </td>
+                    <td className="max-w-xs truncate px-5 py-3 text-sm text-ink-500">
+                      {transfer.description || "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-3 text-sm text-ink-500">
+                      {formatDate(transfer.created_at)}
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-3">
+                      <span
+                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                          transfer.status === "pending"
+                            ? "bg-amber-50 text-amber-700"
+                            : transfer.status === "approved"
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "bg-red-50 text-red-700"
+                        }`}
+                      >
+                        {transfer.status === "pending"
+                          ? "Ожидает"
+                          : transfer.status === "approved"
+                          ? "Одобрен"
+                          : "Отклонен"}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-3 text-sm">
+                      {transfer.status === "pending" ? (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() =>
+                              handleTransferAction(transfer.id, "approved")
+                            }
+                            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700"
+                          >
+                            Одобрить
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleTransferAction(transfer.id, "rejected")
+                            }
+                            className="rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50"
+                          >
+                            Отклонить
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-ink-400">
+                          {transfer.approved_by_name && (
+                            <>Обработал: {transfer.approved_by_name}</>
+                          )}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       {/* Модальное окно формы менеджера */}
       {showAddForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-ink-200 bg-white shadow-xl">
             <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-gray-900">
+              <div className="mb-6 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-ink-900">
                   {editingManager
                     ? "Редактировать менеджера"
                     : "Добавить менеджера"}
                 </h3>
                 <button
                   onClick={resetForm}
-                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                  className="rounded-lg p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-600"
                 >
-                  ×
+                  <Icon name="close" className="h-5 w-5" />
                 </button>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Имя *
                   </label>
                   <input
@@ -729,13 +660,13 @@ export default function ManagersPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, name: e.target.value })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="Полное имя менеджера"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Имя пользователя *
                   </label>
                   <input
@@ -745,13 +676,13 @@ export default function ManagersPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, username: e.target.value })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="username"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Пароль{" "}
                     {editingManager
                       ? "(оставьте пустым для сохранения текущего)"
@@ -764,13 +695,13 @@ export default function ManagersPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, password: e.target.value })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="Пароль"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Email
                   </label>
                   <input
@@ -779,13 +710,13 @@ export default function ManagersPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, email: e.target.value })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="email@example.com"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Телефон
                   </label>
                   <input
@@ -794,23 +725,20 @@ export default function ManagersPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, phone: e.target.value })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="+7 (999) 123-45-67"
                   />
                 </div>
 
-                <div className="flex space-x-3 pt-4">
+                <div className="flex gap-3 pt-4">
                   <button
                     type="button"
                     onClick={resetForm}
-                    className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="btn btn-secondary flex-1"
                   >
                     Отмена
                   </button>
-                  <button
-                    type="submit"
-                    className="flex-1 px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-                  >
+                  <button type="submit" className="btn btn-primary flex-1">
                     {editingManager ? "Обновить" : "Создать"}
                   </button>
                 </div>
@@ -822,12 +750,25 @@ export default function ManagersPage() {
 
       {/* Модальное окно взятия денег у менеджера */}
       {showTakeMoneyDialog && selectedManager && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4">
+          <div className="w-full max-w-md rounded-xl border border-ink-200 bg-white shadow-xl">
             <div className="p-6">
-              <h3 className="text-lg font-bold mb-4">
-                Взять деньги у менеджера {selectedManager.name}
-              </h3>
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <h3 className="text-lg font-semibold text-ink-900">
+                  Взять деньги у менеджера {selectedManager.name}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowTakeMoneyDialog(false);
+                    setSelectedManager(null);
+                    setTakeMoneyForm({ amount: 0, description: "" });
+                  }}
+                  className="rounded-lg p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-600"
+                >
+                  <Icon name="close" className="h-5 w-5" />
+                </button>
+              </div>
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -836,7 +777,7 @@ export default function ManagersPage() {
                 className="space-y-4"
               >
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Сумма ($) *
                   </label>
                   <input
@@ -851,13 +792,13 @@ export default function ManagersPage() {
                         amount: parseFloat(e.target.value) || 0,
                       })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="0.00"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-1.5 block text-sm font-medium text-ink-700">
                     Описание
                   </label>
                   <textarea
@@ -868,13 +809,13 @@ export default function ManagersPage() {
                         description: e.target.value,
                       })
                     }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className="input-field"
                     placeholder="Причина взятия денег..."
                     rows={3}
                   />
                 </div>
 
-                <div className="flex space-x-3 pt-4">
+                <div className="flex gap-3 pt-4">
                   <button
                     type="button"
                     onClick={() => {
@@ -882,14 +823,14 @@ export default function ManagersPage() {
                       setSelectedManager(null);
                       setTakeMoneyForm({ amount: 0, description: "" });
                     }}
-                    className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="btn btn-secondary flex-1"
                   >
                     Отмена
                   </button>
                   <button
                     type="submit"
                     disabled={takeMoneyForm.amount <= 0}
-                    className="flex-1 px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50"
+                    className="btn btn-success flex-1"
                   >
                     Взять деньги
                   </button>
