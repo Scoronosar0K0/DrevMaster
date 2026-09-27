@@ -1,8 +1,9 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/Icon";
 import { PageHeader } from "@/components/ui";
 import { formatDate } from "@/lib/format";
+import { notify, confirmAction } from "@/components/feedback";
 
 const SEARCH_PATH = "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z";
 const EDIT_PATH =
@@ -37,6 +38,26 @@ export default function PartnersPage() {
     password: "",
   });
 
+  // Защита от повторного нажатия: пока запрос выполняется, повторный вызов
+  // игнорируется (иначе двойной клик проводил бы оплату или продажу дважды)
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const guard =
+    <A extends unknown[]>(fn: (...args: A) => Promise<void>) =>
+    async (...args: A) => {
+      const event = args[0] as { preventDefault?: () => void } | undefined;
+      event?.preventDefault?.();
+      if (submittingRef.current) return;
+      submittingRef.current = true;
+      setSubmitting(true);
+      try {
+        await fn(...args);
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
+    };
+
   useEffect(() => {
     fetchPartners();
   }, []);
@@ -53,7 +74,7 @@ export default function PartnersPage() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = guard(async (e: React.FormEvent) => {
     e.preventDefault();
 
     try {
@@ -74,16 +95,16 @@ export default function PartnersPage() {
       if (response.ok) {
         fetchPartners();
         resetForm();
-        alert(editingPartner ? "Партнер обновлен" : "Партнер создан");
+        notify.success(editingPartner ? "Партнер обновлен" : "Партнер создан");
       } else {
         const error = await response.json();
-        alert(error.error || "Ошибка при сохранении");
+        notify.error(error.error || "Ошибка при сохранении");
       }
     } catch (error) {
       console.error("Ошибка:", error);
-      alert("Ошибка при сохранении");
+      notify.error("Ошибка при сохранении");
     }
-  };
+  });
 
   const resetForm = () => {
     setFormData({
@@ -111,8 +132,8 @@ export default function PartnersPage() {
     setShowAddForm(true);
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("Вы уверены, что хотите удалить партнера?")) return;
+  const handleDelete = guard(async (id: number) => {
+    if (!await confirmAction("Вы уверены, что хотите удалить партнера?", { danger: true })) return;
 
     try {
       const response = await fetch(`/api/partners/${id}`, {
@@ -121,16 +142,16 @@ export default function PartnersPage() {
 
       if (response.ok) {
         fetchPartners();
-        alert("Партнер удален");
+        notify.success("Партнер удален");
       } else {
         const error = await response.json();
-        alert(error.error || "Ошибка при удалении");
+        notify.error(error.error || "Ошибка при удалении");
       }
     } catch (error) {
       console.error("Ошибка:", error);
-      alert("Ошибка при удалении");
+      notify.error("Ошибка при удалении");
     }
-  };
+  });
 
   const filteredPartners = partners.filter(
     (partner) =>
@@ -294,6 +315,7 @@ export default function PartnersPage() {
                     </svg>
                   </button>
                   <button
+                    disabled={submitting}
                     onClick={() => handleDelete(partner.id)}
                     className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-red-50 hover:text-red-600"
                     title="Удалить"
@@ -442,7 +464,7 @@ export default function PartnersPage() {
                   >
                     Отмена
                   </button>
-                  <button type="submit" className="btn btn-primary flex-1">
+                  <button disabled={submitting} type="submit" className="btn btn-primary flex-1">
                     {editingPartner ? "Обновить" : "Создать"}
                   </button>
                 </div>

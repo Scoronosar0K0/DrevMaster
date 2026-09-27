@@ -1,8 +1,9 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import Icon, { type IconName } from "@/components/Icon";
 import { PageHeader } from "@/components/ui";
-import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
+import { formatDate, formatDateTime, formatMoney, todayLocal } from "@/lib/format";
+import { notify } from "@/components/feedback";
 
 interface Supplier {
   id: number;
@@ -90,7 +91,7 @@ export default function OrdersPage() {
     order_number: "",
     supplier_id: "",
     item_id: "",
-    date: new Date().toISOString().split("T")[0],
+    date: todayLocal(),
     description: "",
     measurement: "m3",
     value: 0,
@@ -118,7 +119,7 @@ export default function OrdersPage() {
     price: 0,
     buyer_name: "",
     description: "",
-    date: new Date().toISOString().split("T")[0],
+    date: todayLocal(),
     link_to_manager: false,
     manager_id: "",
   });
@@ -141,6 +142,26 @@ export default function OrdersPage() {
     volume: 0,
     description: "",
   });
+
+  // Защита от повторного нажатия: пока запрос выполняется, повторный вызов
+  // игнорируется (иначе двойной клик проводил бы оплату или продажу дважды)
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const guard =
+    <A extends unknown[]>(fn: (...args: A) => Promise<void>) =>
+    async (...args: A) => {
+      const event = args[0] as { preventDefault?: () => void } | undefined;
+      event?.preventDefault?.();
+      if (submittingRef.current) return;
+      submittingRef.current = true;
+      setSubmitting(true);
+      try {
+        await fn(...args);
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
+    };
 
   useEffect(() => {
     fetchData();
@@ -244,11 +265,11 @@ export default function OrdersPage() {
     setShowOrderExpenseDialog(true);
   };
 
-  const handleSubmitOrderExpense = async (e: React.FormEvent) => {
+  const handleSubmitOrderExpense = guard(async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!selectedOrder || orderExpenseForm.amount <= 0) {
-      alert("Введите сумму расхода");
+      notify.error("Введите сумму расхода");
       return;
     }
 
@@ -266,30 +287,30 @@ export default function OrdersPage() {
       });
 
       if (response.ok) {
-        alert("Операционный расход добавлен!");
+        notify.success("Операционный расход добавлен!");
         setShowOrderExpenseDialog(false);
         setOrderExpenseForm({ amount: 0, description: "" });
         fetchData(); // Обновляем данные
       } else {
         const error = await response.json();
-        alert(`Ошибка: ${error.error}`);
+        notify.error(`Ошибка: ${error.error}`);
       }
     } catch (error) {
       console.error("Ошибка добавления расхода:", error);
-      alert("Ошибка добавления расхода");
+      notify.error("Ошибка добавления расхода");
     }
-  };
+  });
 
-  const handleCreateContainer = async (e: React.FormEvent) => {
+  const handleCreateContainer = guard(async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!newlyCreatedOrder || containerCreationForm.volume <= 0) {
-      alert("Введите корректный объем контейнера");
+      notify.error("Введите корректный объем контейнера");
       return;
     }
 
     if (containerCreationForm.volume > newlyCreatedOrder.value) {
-      alert("Объем контейнера не может превышать общий объем заказа");
+      notify.error("Объем контейнера не может превышать общий объем заказа");
       return;
     }
 
@@ -307,20 +328,20 @@ export default function OrdersPage() {
       });
 
       if (response.ok) {
-        alert("Контейнер создан успешно!");
+        notify.success("Контейнер создан успешно!");
         setShowContainerCreationDialog(false);
         setNewlyCreatedOrder(null);
         setContainerCreationForm({ volume: 0, description: "" });
         fetchData(); // Обновляем данные
       } else {
         const error = await response.json();
-        alert(`Ошибка: ${error.error}`);
+        notify.error(`Ошибка: ${error.error}`);
       }
     } catch (error) {
       console.error("Ошибка создания контейнера:", error);
-      alert("Ошибка создания контейнера");
+      notify.error("Ошибка создания контейнера");
     }
-  };
+  });
 
   const handleSkipContainer = () => {
     setShowContainerCreationDialog(false);
@@ -329,6 +350,13 @@ export default function OrdersPage() {
   };
 
   const handleSupplierChange = (supplierId: string) => {
+    setDebtHandling({
+      enabled: false,
+      type: "subtract",
+      item_name: "",
+      amount: 0,
+      max_amount: 0,
+    });
     setFormData({
       ...formData,
       supplier_id: supplierId,
@@ -410,7 +438,7 @@ export default function OrdersPage() {
     });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = guard(async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Подготавливаем данные заказа с учетом работы с долгами
@@ -433,7 +461,7 @@ export default function OrdersPage() {
 
     // Проверяем баланс (загрузка от компании оформляется в займ и кассу не тратит)
     if (!formData.isCompanyLoading && finalTotalPrice > currentBalance) {
-      alert(
+      notify.error(
         `Недостаточно средств! Необходимо: ${formatMoney(
           finalTotalPrice
         )}, Доступно: ${formatMoney(currentBalance)}`
@@ -480,20 +508,20 @@ export default function OrdersPage() {
         setShowContainerCreationDialog(true);
       } else {
         const error = await response.json();
-        alert(`Ошибка: ${error.error}`);
+        notify.error(`Ошибка: ${error.error}`);
       }
     } catch (error) {
       console.error("Ошибка создания заказа:", error);
-      alert("Ошибка создания заказа");
+      notify.error("Ошибка создания заказа");
     }
-  };
+  });
 
   const resetForm = () => {
     setFormData({
       order_number: "",
       supplier_id: "",
       item_id: "",
-      date: new Date().toISOString().split("T")[0],
+      date: todayLocal(),
       description: "",
       measurement: "m3",
       value: 0,
@@ -502,6 +530,16 @@ export default function OrdersPage() {
       isCompanyLoading: false,
     });
     setSupplierItems([]);
+    // Зачет долга относится к конкретному поставщику и товару — сбрасываем,
+    // иначе он незаметно уменьшил бы цену следующего заказа
+    setDebtHandling({
+      enabled: false,
+      type: "subtract",
+      item_name: "",
+      amount: 0,
+      max_amount: 0,
+    });
+    setSelectedSupplierDebts([]);
   };
 
   const handleOrderClick = (order: Order) => {
@@ -534,7 +572,7 @@ export default function OrdersPage() {
         price: 0,
         buyer_name: "",
         description: "",
-        date: new Date().toISOString().split("T")[0],
+        date: todayLocal(),
         link_to_manager: false,
         manager_id: "",
       });
@@ -547,7 +585,7 @@ export default function OrdersPage() {
     }
   };
 
-  const handlePayTransportation = async () => {
+  const handlePayTransportation = guard(async () => {
     if (!selectedOrder) return;
 
     const containers = getOrderContainers(selectedOrder);
@@ -579,15 +617,15 @@ export default function OrdersPage() {
         setSelectedOrder(null);
       } else {
         const error = await response.json();
-        alert(`Ошибка: ${error.error}`);
+        notify.error(`Ошибка: ${error.error}`);
       }
     } catch (error) {
       console.error("Ошибка оплаты транспортировки:", error);
-      alert("Ошибка оплаты транспортировки");
+      notify.error("Ошибка оплаты транспортировки");
     }
-  };
+  });
 
-  const handlePayCustomerFee = async () => {
+  const handlePayCustomerFee = guard(async () => {
     if (!selectedOrder) return;
 
     try {
@@ -606,16 +644,21 @@ export default function OrdersPage() {
         setSelectedOrder(null);
       } else {
         const error = await response.json();
-        alert(`Ошибка: ${error.error}`);
+        notify.error(`Ошибка: ${error.error}`);
       }
     } catch (error) {
       console.error("Ошибка оплаты таможенного сбора:", error);
-      alert("Ошибка оплаты таможенного сбора");
+      notify.error("Ошибка оплаты таможенного сбора");
     }
-  };
+  });
 
-  const handleSellOrder = async () => {
+  const handleSellOrder = guard(async () => {
     if (!selectedOrder) return;
+
+    if (sellForm.link_to_manager && !sellForm.manager_id) {
+      notify.error("Выберите менеджера для продажи в долг");
+      return;
+    }
 
     try {
       const response = await fetch(`/api/orders/${selectedOrder.id}/sell`, {
@@ -630,15 +673,15 @@ export default function OrdersPage() {
         setSelectedOrder(null);
       } else {
         const error = await response.json();
-        alert(`Ошибка: ${error.error}`);
+        notify.error(`Ошибка: ${error.error}`);
       }
     } catch (error) {
       console.error("Ошибка продажи:", error);
-      alert("Ошибка продажи");
+      notify.error("Ошибка продажи");
     }
-  };
+  });
 
-  const handleLoanPayment = async () => {
+  const handleLoanPayment = guard(async () => {
     if (!selectedOrder) return;
 
     const totalCost = loanPaymentForm.containers.reduce(
@@ -655,7 +698,7 @@ export default function OrdersPage() {
     );
 
     if (totalCost === 0 || loanPaymentForm.containers.length === 0) {
-      alert("Добавьте хотя бы один контейнер для оплаты");
+      notify.error("Добавьте хотя бы один контейнер для оплаты");
       return;
     }
 
@@ -675,13 +718,13 @@ export default function OrdersPage() {
         setSelectedOrder(null);
       } else {
         const error = await response.json();
-        alert(`Ошибка: ${error.error}`);
+        notify.error(`Ошибка: ${error.error}`);
       }
     } catch (error) {
       console.error("Ошибка оплаты займа:", error);
-      alert("Ошибка оплаты займа");
+      notify.error("Ошибка оплаты займа");
     }
-  };
+  });
 
   const addLoanContainer = () => {
     const nextContainerNumber =
@@ -1346,7 +1389,7 @@ export default function OrdersPage() {
                   >
                     Отмена
                   </button>
-                  <button type="submit" className="btn btn-primary">
+                  <button disabled={submitting} type="submit" className="btn btn-primary">
                     Создать заказ
                   </button>
                 </div>
@@ -1389,163 +1432,6 @@ export default function OrdersPage() {
                     placeholder="0.00"
                   />
                 </div>
-                {/* Чекбокс для загрузки в несколько контейнеров */}
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="multipleContainers"
-                    checked={transportForm.multipleContainers}
-                    onChange={(e) =>
-                      setTransportForm({
-                        ...transportForm,
-                        multipleContainers: e.target.checked,
-                        containerCount: e.target.checked ? 1 : 0,
-                        containers: e.target.checked
-                          ? [{ container: 1, value: selectedOrder.value }]
-                          : [],
-                      })
-                    }
-                    className="h-4 w-4 rounded border-ink-300 accent-brand-600"
-                  />
-                  <label
-                    htmlFor="multipleContainers"
-                    className="text-sm font-medium text-ink-700"
-                  >
-                    Загружается в несколько контейнеров
-                  </label>
-                </div>
-
-                {/* Чекбокс для загрузки от компании */}
-                {transportForm.multipleContainers && (
-                  <div className="ml-6 flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="companyLoadingTransport"
-                      checked={transportForm.isCompanyLoading}
-                      onChange={(e) =>
-                        setTransportForm({
-                          ...transportForm,
-                          isCompanyLoading: e.target.checked,
-                        })
-                      }
-                      className="h-4 w-4 rounded border-ink-300 accent-brand-600"
-                    />
-                    <label
-                      htmlFor="companyLoadingTransport"
-                      className="text-sm font-medium text-ink-700"
-                    >
-                      Загружается от компании (займ)
-                    </label>
-                  </div>
-                )}
-
-                {/* Создание контейнеров */}
-                {transportForm.multipleContainers && (
-                  <div className="space-y-4 border-t border-ink-100 pt-4">
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-ink-700">
-                        Количество контейнеров
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="10"
-                        value={transportForm.containerCount}
-                        onChange={(e) => {
-                          const count = parseInt(e.target.value) || 1;
-                          const valuePerContainer = selectedOrder.value / count;
-                          const newContainers = Array.from(
-                            { length: count },
-                            (_, i) => ({
-                              container: i + 1,
-                              value: valuePerContainer,
-                            })
-                          );
-                          setTransportForm({
-                            ...transportForm,
-                            containerCount: count,
-                            containers: newContainers,
-                          });
-                        }}
-                        className="input-field w-32"
-                        title="Введите количество контейнеров"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                      {transportForm.containers.map((container, index) => (
-                        <div
-                          key={container.container}
-                          className={`rounded-lg border p-3 ${
-                            transportForm.isCompanyLoading &&
-                            transportForm.selectedContainers.includes(
-                              container.container
-                            )
-                              ? "border-brand-500 bg-brand-50"
-                              : "border-ink-200"
-                          }`}
-                        >
-                          <div className="mb-2 flex items-center justify-between">
-                            <h4 className="text-sm font-medium text-ink-900">
-                              Контейнер {container.container}
-                            </h4>
-                            {transportForm.isCompanyLoading && (
-                              <input
-                                type="checkbox"
-                                checked={transportForm.selectedContainers.includes(
-                                  container.container
-                                )}
-                                onChange={() =>
-                                  toggleContainerSelection(container.container)
-                                }
-                                className="h-4 w-4 rounded border-ink-300 accent-brand-600"
-                                title="Оплатить этот контейнер"
-                              />
-                            )}
-                          </div>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            max={selectedOrder.value}
-                            value={container.value}
-                            onChange={(e) => {
-                              const newValue = parseFloat(e.target.value) || 0;
-                              const updatedContainers = [
-                                ...transportForm.containers,
-                              ];
-                              updatedContainers[index] = {
-                                ...container,
-                                value: newValue,
-                              };
-                              setTransportForm({
-                                ...transportForm,
-                                containers: updatedContainers,
-                              });
-                            }}
-                            className="input-field"
-                            placeholder={`Количество (${selectedOrder.measurement})`}
-                          />
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="space-y-1 text-sm text-ink-600">
-                      <div>
-                        Общий объем: {selectedOrder.value}{" "}
-                        {selectedOrder.measurement}
-                      </div>
-                      <div>
-                        Загружено в контейнеры:{" "}
-                        {transportForm.containers
-                          .reduce((sum, c) => sum + c.value, 0)
-                          .toFixed(2)}{" "}
-                        {selectedOrder.measurement}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
                 {/* Выбор существующих контейнеров (если не создаем новые) */}
                 {!transportForm.multipleContainers && (
                   <div>
@@ -1617,7 +1503,7 @@ export default function OrdersPage() {
                 </button>
                 <button
                   onClick={handlePayTransportation}
-                  disabled={transportForm.selectedContainers.length === 0}
+                  disabled={submitting || (transportForm.selectedContainers.length === 0)}
                   className="btn btn-primary"
                 >
                   Оплатить
@@ -1692,6 +1578,7 @@ export default function OrdersPage() {
                   Отмена
                 </button>
                 <button
+                  disabled={submitting}
                   onClick={handlePayCustomerFee}
                   className="btn btn-primary"
                 >
@@ -1893,7 +1780,7 @@ export default function OrdersPage() {
                 >
                   Отмена
                 </button>
-                <button onClick={handleSellOrder} className="btn btn-primary">
+                <button disabled={submitting} onClick={handleSellOrder} className="btn btn-primary">
                   Продать
                 </button>
               </div>
@@ -2111,6 +1998,7 @@ export default function OrdersPage() {
                       type="button"
                       onClick={handleLoanPayment}
                       disabled={
+                        submitting ||
                         loanPaymentForm.containers.length === 0 ||
                         loanPaymentForm.containers.some(
                           (c) => c.value === 0 || c.cost === 0
@@ -2209,6 +2097,7 @@ export default function OrdersPage() {
                     Пропустить
                   </button>
                   <button
+                    disabled={submitting}
                     type="submit"
                     className="btn btn-primary"
                   >
@@ -2298,6 +2187,7 @@ export default function OrdersPage() {
                     Отмена
                   </button>
                   <button
+                    disabled={submitting}
                     type="submit"
                     className="btn btn-primary"
                   >

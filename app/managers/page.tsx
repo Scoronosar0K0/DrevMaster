@@ -1,8 +1,9 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/Icon";
 import { PageHeader } from "@/components/ui";
 import { formatDate, formatMoney } from "@/lib/format";
+import { notify, confirmAction } from "@/components/feedback";
 
 const SEARCH_PATH = "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z";
 const EDIT_PATH =
@@ -71,6 +72,26 @@ export default function ManagersPage() {
     description: "",
   });
 
+  // Защита от повторного нажатия: пока запрос выполняется, повторный вызов
+  // игнорируется (иначе двойной клик проводил бы оплату или продажу дважды)
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const guard =
+    <A extends unknown[]>(fn: (...args: A) => Promise<void>) =>
+    async (...args: A) => {
+      const event = args[0] as { preventDefault?: () => void } | undefined;
+      event?.preventDefault?.();
+      if (submittingRef.current) return;
+      submittingRef.current = true;
+      setSubmitting(true);
+      try {
+        await fn(...args);
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
+    };
+
   useEffect(() => {
     fetchManagers();
     fetchTransfers();
@@ -100,7 +121,7 @@ export default function ManagersPage() {
     }
   };
 
-  const handleTransferAction = async (
+  const handleTransferAction = guard(async (
     transferId: number,
     status: "approved" | "rejected"
   ) => {
@@ -112,18 +133,19 @@ export default function ManagersPage() {
       });
 
       if (response.ok) {
-        alert(status === "approved" ? "Перевод одобрен!" : "Перевод отклонен!");
+        notify.success(status === "approved" ? "Перевод одобрен!" : "Перевод отклонен!");
         fetchTransfers(); // Обновляем список
+        fetchManagers(); // Долг менеджера изменился
       } else {
-        alert("Ошибка при обработке перевода");
+        notify.error("Ошибка при обработке перевода");
       }
     } catch (error) {
       console.error("Ошибка при обработке перевода:", error);
-      alert("Ошибка при обработке перевода");
+      notify.error("Ошибка при обработке перевода");
     }
-  };
+  });
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = guard(async (e: React.FormEvent) => {
     e.preventDefault();
 
     try {
@@ -149,16 +171,16 @@ export default function ManagersPage() {
       if (response.ok) {
         fetchManagers();
         resetForm();
-        alert(editingManager ? "Менеджер обновлен" : "Менеджер создан");
+        notify.success(editingManager ? "Менеджер обновлен" : "Менеджер создан");
       } else {
         const error = await response.json();
-        alert(error.error || "Ошибка при сохранении");
+        notify.error(error.error || "Ошибка при сохранении");
       }
     } catch (error) {
       console.error("Ошибка:", error);
-      alert("Ошибка при сохранении");
+      notify.error("Ошибка при сохранении");
     }
-  };
+  });
 
   const resetForm = () => {
     setFormData({
@@ -186,8 +208,8 @@ export default function ManagersPage() {
     setShowAddForm(true);
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("Вы уверены, что хотите удалить менеджера?")) return;
+  const handleDelete = guard(async (id: number) => {
+    if (!await confirmAction("Вы уверены, что хотите удалить менеджера?", { danger: true })) return;
 
     try {
       const response = await fetch(`/api/managers/${id}`, {
@@ -196,18 +218,18 @@ export default function ManagersPage() {
 
       if (response.ok) {
         fetchManagers();
-        alert("Менеджер удален");
+        notify.success("Менеджер удален");
       } else {
         const error = await response.json();
-        alert(error.error || "Ошибка при удалении");
+        notify.error(error.error || "Ошибка при удалении");
       }
     } catch (error) {
       console.error("Ошибка:", error);
-      alert("Ошибка при удалении");
+      notify.error("Ошибка при удалении");
     }
-  };
+  });
 
-  const toggleActive = async (manager: Manager) => {
+  const toggleActive = guard(async (manager: Manager) => {
     try {
       const response = await fetch(`/api/managers/${manager.id}`, {
         method: "PUT",
@@ -224,17 +246,17 @@ export default function ManagersPage() {
         fetchManagers();
       } else {
         const error = await response.json();
-        alert(error.error || "Ошибка при обновлении статуса");
+        notify.error(error.error || "Ошибка при обновлении статуса");
       }
     } catch (error) {
       console.error("Ошибка:", error);
-      alert("Ошибка при обновлении статуса");
+      notify.error("Ошибка при обновлении статуса");
     }
-  };
+  });
 
-  const handleTakeMoney = async () => {
+  const handleTakeMoney = guard(async () => {
     if (!selectedManager || takeMoneyForm.amount <= 0) {
-      alert("Выберите менеджера и укажите сумму");
+      notify.error("Выберите менеджера и укажите сумму");
       return;
     }
 
@@ -251,20 +273,20 @@ export default function ManagersPage() {
       });
 
       if (response.ok) {
-        alert("Деньги успешно взяты у менеджера");
+        notify.success("Деньги успешно взяты у менеджера");
         setShowTakeMoneyDialog(false);
         setSelectedManager(null);
         setTakeMoneyForm({ amount: 0, description: "" });
         fetchManagers();
       } else {
         const error = await response.json();
-        alert(`Ошибка: ${error.error}`);
+        notify.error(`Ошибка: ${error.error}`);
       }
     } catch (error) {
       console.error("Ошибка взятия денег:", error);
-      alert("Ошибка взятия денег");
+      notify.error("Ошибка взятия денег");
     }
-  };
+  });
 
   const filteredManagers = managers.filter(
     (manager) =>
@@ -420,6 +442,7 @@ export default function ManagersPage() {
 
                 <div className="flex items-center gap-1 lg:col-span-2 lg:justify-end">
                   <button
+                    disabled={submitting}
                     onClick={() => toggleActive(manager)}
                     className={`rounded-lg p-1.5 text-ink-400 transition-colors ${
                       manager.is_active
@@ -484,6 +507,7 @@ export default function ManagersPage() {
                     <Icon name="wallet" className="h-4 w-4" />
                   </button>
                   <button
+                    disabled={submitting}
                     onClick={() => handleDelete(manager.id)}
                     className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-red-50 hover:text-red-600"
                     title="Удалить"
@@ -738,7 +762,7 @@ export default function ManagersPage() {
                   >
                     Отмена
                   </button>
-                  <button type="submit" className="btn btn-primary flex-1">
+                  <button disabled={submitting} type="submit" className="btn btn-primary flex-1">
                     {editingManager ? "Обновить" : "Создать"}
                   </button>
                 </div>
@@ -829,7 +853,7 @@ export default function ManagersPage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={takeMoneyForm.amount <= 0}
+                    disabled={submitting || (takeMoneyForm.amount <= 0)}
                     className="btn btn-success flex-1"
                   >
                     Взять деньги

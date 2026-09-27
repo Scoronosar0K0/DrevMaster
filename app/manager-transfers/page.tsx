@@ -1,8 +1,9 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/Icon";
 import { PageHeader } from "@/components/ui";
 import { formatDate, formatMoney } from "@/lib/format";
+import { notify } from "@/components/feedback";
 
 interface Partner {
   id: number;
@@ -33,6 +34,26 @@ export default function ManagerTransfersPage() {
     amount: 0,
     description: "",
   });
+
+  // Защита от повторного нажатия: пока запрос выполняется, повторный вызов
+  // игнорируется (иначе двойной клик проводил бы оплату или продажу дважды)
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const guard =
+    <A extends unknown[]>(fn: (...args: A) => Promise<void>) =>
+    async (...args: A) => {
+      const event = args[0] as { preventDefault?: () => void } | undefined;
+      event?.preventDefault?.();
+      if (submittingRef.current) return;
+      submittingRef.current = true;
+      setSubmitting(true);
+      try {
+        await fn(...args);
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
+    };
 
   useEffect(() => {
     fetchData();
@@ -68,16 +89,16 @@ export default function ManagerTransfersPage() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = guard(async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!transferForm.amount || transferForm.amount <= 0) {
-      alert("Укажите корректную сумму");
+      notify.error("Укажите корректную сумму");
       return;
     }
 
     if (transferForm.to_user_type === "partner" && !transferForm.to_user_id) {
-      alert("Выберите партнера");
+      notify.error("Выберите партнера");
       return;
     }
 
@@ -95,7 +116,7 @@ export default function ManagerTransfersPage() {
       });
 
       if (response.ok) {
-        alert("Заявка на перевод отправлена!");
+        notify.success("Заявка на перевод отправлена!");
         setTransferForm({
           to_user_type: "admin",
           to_user_id: "",
@@ -106,13 +127,13 @@ export default function ManagerTransfersPage() {
         fetchTransfers();
       } else {
         const error = await response.json();
-        alert(`Ошибка: ${error.error}`);
+        notify.error(`Ошибка: ${error.error}`);
       }
     } catch (error) {
       console.error("Ошибка создания перевода:", error);
-      alert("Ошибка создания перевода");
+      notify.error("Ошибка создания перевода");
     }
-  };
+  });
 
   if (loading) {
     return (
@@ -300,6 +321,11 @@ export default function ManagerTransfersPage() {
                         </option>
                       ))}
                     </select>
+                    <p className="mt-1.5 text-xs text-ink-500">
+                      Вы платите партнеру от имени компании. После подтверждения
+                      администратором сумма уменьшит ваш долг и долг компании
+                      перед этим партнером
+                    </p>
                   </div>
                 )}
 
@@ -350,7 +376,7 @@ export default function ManagerTransfersPage() {
                   >
                     Отмена
                   </button>
-                  <button type="submit" className="btn btn-primary flex-1">
+                  <button disabled={submitting} type="submit" className="btn btn-primary flex-1">
                     Отправить
                   </button>
                 </div>

@@ -1,8 +1,9 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/Icon";
 import { PageHeader } from "@/components/ui";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate, formatMoney, todayLocal } from "@/lib/format";
+import { notify, confirmAction } from "@/components/feedback";
 
 interface Partner {
   id: number;
@@ -47,7 +48,7 @@ export default function CashPage() {
     partner_id: "",
     amount: 0,
     description: "",
-    loan_date: new Date().toISOString().split("T")[0],
+    loan_date: todayLocal(),
   });
 
   const [incomeForm, setIncomeForm] = useState({
@@ -63,6 +64,26 @@ export default function CashPage() {
   });
 
   const [totalBalance, setTotalBalance] = useState(0);
+
+  // Защита от повторного нажатия: пока запрос выполняется, повторный вызов
+  // игнорируется (иначе двойной клик проводил бы оплату или продажу дважды)
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const guard =
+    <A extends unknown[]>(fn: (...args: A) => Promise<void>) =>
+    async (...args: A) => {
+      const event = args[0] as { preventDefault?: () => void } | undefined;
+      event?.preventDefault?.();
+      if (submittingRef.current) return;
+      submittingRef.current = true;
+      setSubmitting(true);
+      try {
+        await fn(...args);
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
+    };
 
   useEffect(() => {
     fetchData();
@@ -107,11 +128,11 @@ export default function CashPage() {
     setTotalBalance(data.balance);
   };
 
-  const handleLoanSubmit = async (e: React.FormEvent) => {
+  const handleLoanSubmit = guard(async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!loanForm.partner_id || loanForm.amount <= 0) {
-      alert("Выберите партнера и укажите сумму");
+      notify.error("Выберите партнера и укажите сумму");
       return;
     }
 
@@ -133,30 +154,30 @@ export default function CashPage() {
       });
 
       if (response.ok) {
-        alert("Займ выдан успешно!");
+        notify.success("Займ выдан успешно!");
         setLoanForm({
           partner_id: "",
           amount: 0,
           description: "",
-          loan_date: new Date().toISOString().split("T")[0],
+          loan_date: todayLocal(),
         });
         setShowLoanForm(false);
         fetchData();
       } else {
         const error = await response.json();
-        alert(`Ошибка: ${error.error}`);
+        notify.error(`Ошибка: ${error.error}`);
       }
     } catch (error) {
       console.error("Ошибка при выдаче займа:", error);
-      alert("Ошибка при выдаче займа");
+      notify.error("Ошибка при выдаче займа");
     }
-  };
+  });
 
-  const handleIncomeSubmit = async (e: React.FormEvent) => {
+  const handleIncomeSubmit = guard(async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (incomeForm.amount <= 0) {
-      alert("Укажите сумму поступления");
+      notify.error("Укажите сумму поступления");
       return;
     }
 
@@ -170,25 +191,30 @@ export default function CashPage() {
       });
 
       if (response.ok) {
-        alert("Поступление добавлено успешно!");
+        notify.success("Поступление добавлено успешно!");
         setIncomeForm({ amount: 0, description: "" });
         setShowIncomeForm(false);
         fetchData();
       } else {
         const error = await response.json();
-        alert(`Ошибка: ${error.error}`);
+        notify.error(`Ошибка: ${error.error}`);
       }
     } catch (error) {
       console.error("Ошибка при добавлении поступления:", error);
-      alert("Ошибка при добавлении поступления");
+      notify.error("Ошибка при добавлении поступления");
     }
-  };
+  });
 
-  const handleExpenseSubmit = async (e: React.FormEvent) => {
+  const handleExpenseSubmit = guard(async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (expenseForm.amount <= 0) {
-      alert("Укажите сумму расхода");
+      notify.error("Укажите сумму расхода");
+      return;
+    }
+
+    if (expenseForm.link_to_order && !expenseForm.order_id) {
+      notify.error("Выберите заказ для привязки расхода");
       return;
     }
 
@@ -202,7 +228,7 @@ export default function CashPage() {
       });
 
       if (response.ok) {
-        alert("Расход добавлен успешно!");
+        notify.success("Расход добавлен успешно!");
         setExpenseForm({
           amount: 0,
           description: "",
@@ -213,15 +239,15 @@ export default function CashPage() {
         fetchData();
       } else {
         const error = await response.json();
-        alert(`Ошибка: ${error.error}`);
+        notify.error(`Ошибка: ${error.error}`);
       }
     } catch (error) {
       console.error("Ошибка при добавлении расхода:", error);
-      alert("Ошибка при добавлении расхода");
+      notify.error("Ошибка при добавлении расхода");
     }
-  };
+  });
 
-  const payLoan = async (loanId: number, isPartial: boolean = false) => {
+  const payLoan = guard(async (loanId: number, isPartial: boolean = false) => {
     if (isPartial) {
       // Открываем диалог для частичной оплаты
       const loan = loans.find((l) => l.id === loanId);
@@ -233,8 +259,19 @@ export default function CashPage() {
       return;
     }
 
-    // Полная оплата
-    if (!confirm("Подтвердить полную оплату займа?")) return;
+    // Полная оплата. Для долга менеджера это получение денег от него,
+    // для займа партнера — возврат денег из кассы
+    const loan = loans.find((l) => l.id === loanId);
+    const isManagerDebt = loan?.partner_role === "manager";
+    if (
+      !(await confirmAction(
+        isManagerDebt
+          ? `Отметить, что менеджер заплатил ${formatMoney(loan?.amount)}? Сумма поступит в кассу.`
+          : `Вернуть партнеру ${formatMoney(loan?.amount)} из кассы?`,
+        { confirmText: isManagerDebt ? "Получено" : "Вернуть" }
+      ))
+    )
+      return;
 
     try {
       const response = await fetch(`/api/loans/${loanId}/repay`, {
@@ -244,28 +281,28 @@ export default function CashPage() {
       });
 
       if (response.ok) {
-        alert("Займ погашен!");
+        notify.success("Займ погашен!");
         fetchData();
       } else {
         const error = await response.json();
-        alert(`Ошибка: ${error.error}`);
+        notify.error(`Ошибка: ${error.error}`);
       }
     } catch (error) {
       console.error("Ошибка при погашении займа:", error);
-      alert("Ошибка при погашении займа");
+      notify.error("Ошибка при погашении займа");
     }
-  };
+  });
 
-  const handlePartialPayment = async (e: React.FormEvent) => {
+  const handlePartialPayment = guard(async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!selectedLoan || partialPaymentForm.amount <= 0) {
-      alert("Укажите корректную сумму оплаты");
+      notify.error("Укажите корректную сумму оплаты");
       return;
     }
 
     if (partialPaymentForm.amount > selectedLoan.amount) {
-      alert("Сумма оплаты не может превышать размер займа");
+      notify.error("Сумма оплаты не может превышать размер займа");
       return;
     }
 
@@ -280,19 +317,19 @@ export default function CashPage() {
       });
 
       if (response.ok) {
-        alert("Частичная оплата займа выполнена!");
+        notify.success("Частичная оплата займа выполнена!");
         setShowPartialPaymentDialog(false);
         setSelectedLoan(null);
         fetchData();
       } else {
         const error = await response.json();
-        alert(`Ошибка: ${error.error}`);
+        notify.error(`Ошибка: ${error.error}`);
       }
     } catch (error) {
       console.error("Ошибка при частичной оплате займа:", error);
-      alert("Ошибка при частичной оплате займа");
+      notify.error("Ошибка при частичной оплате займа");
     }
-  };
+  });
 
   const viewLoanDetails = async (loan: Loan) => {
     setSelectedLoan(loan);
@@ -447,17 +484,25 @@ export default function CashPage() {
                       {/* Кнопки оплаты только для неоплаченных займов */}
                       {!loan.is_paid && (
                         <>
+                          {/* Для долга менеджера кнопки означают получение
+                              денег, для займа партнера — возврат */}
                           <button
+                            disabled={submitting}
                             onClick={() => payLoan(loan.id, true)}
                             className="btn border-amber-300 bg-white px-3 py-1.5 text-xs text-amber-700 hover:bg-amber-50 focus-visible:ring-amber-400"
                           >
-                            Частично
+                            {loan.partner_role === "manager"
+                              ? "Получено частично"
+                              : "Вернуть частично"}
                           </button>
                           <button
+                            disabled={submitting}
                             onClick={() => payLoan(loan.id, false)}
                             className="btn btn-success px-3 py-1.5 text-xs"
                           >
-                            Полностью
+                            {loan.partner_role === "manager"
+                              ? "Получено полностью"
+                              : "Вернуть полностью"}
                           </button>
                         </>
                       )}
@@ -537,7 +582,7 @@ export default function CashPage() {
                   >
                     Отмена
                   </button>
-                  <button type="submit" className="btn btn-success flex-1">
+                  <button disabled={submitting} type="submit" className="btn btn-success flex-1">
                     Добавить
                   </button>
                 </div>
@@ -666,7 +711,7 @@ export default function CashPage() {
                   >
                     Отмена
                   </button>
-                  <button type="submit" className="btn btn-danger flex-1">
+                  <button disabled={submitting} type="submit" className="btn btn-danger flex-1">
                     Добавить
                   </button>
                 </div>
@@ -779,7 +824,7 @@ export default function CashPage() {
                   >
                     Отмена
                   </button>
-                  <button type="submit" className="btn btn-primary flex-1">
+                  <button disabled={submitting} type="submit" className="btn btn-primary flex-1">
                     Взять займ
                   </button>
                 </div>
@@ -958,7 +1003,7 @@ export default function CashPage() {
                 </p>
               </div>
               <div className="flex gap-3">
-                <button type="submit" className="btn btn-primary flex-1">
+                <button disabled={submitting} type="submit" className="btn btn-primary flex-1">
                   Оплатить
                 </button>
                 <button

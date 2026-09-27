@@ -1,7 +1,8 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/Icon";
 import { PageHeader } from "@/components/ui";
+import { notify, confirmAction } from "@/components/feedback";
 
 const SEARCH_PATH = "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z";
 const EDIT_PATH =
@@ -50,6 +51,26 @@ export default function SettingsPage() {
     confirmPassword: "",
   });
 
+  // Защита от повторного нажатия: пока запрос выполняется, повторный вызов
+  // игнорируется (иначе двойной клик проводил бы оплату или продажу дважды)
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const guard =
+    <A extends unknown[]>(fn: (...args: A) => Promise<void>) =>
+    async (...args: A) => {
+      const event = args[0] as { preventDefault?: () => void } | undefined;
+      event?.preventDefault?.();
+      if (submittingRef.current) return;
+      submittingRef.current = true;
+      setSubmitting(true);
+      try {
+        await fn(...args);
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
+    };
+
   useEffect(() => {
     fetchUsers();
     loadCurrentUser();
@@ -87,7 +108,7 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = guard(async (e: React.FormEvent) => {
     e.preventDefault();
 
     try {
@@ -105,25 +126,25 @@ export default function SettingsPage() {
       if (response.ok) {
         fetchUsers();
         resetForm();
-        alert(editingUser ? "Пользователь обновлен" : "Пользователь создан");
+        notify.success(editingUser ? "Пользователь обновлен" : "Пользователь создан");
       } else {
         const error = await response.json();
-        alert(error.error || "Ошибка при сохранении");
+        notify.error(error.error || "Ошибка при сохранении");
       }
     } catch (error) {
       console.error("Ошибка:", error);
-      alert("Ошибка при сохранении");
+      notify.error("Ошибка при сохранении");
     }
-  };
+  });
 
-  const handleProfileSubmit = async (e: React.FormEvent) => {
+  const handleProfileSubmit = guard(async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (
       profileData.newPassword &&
       profileData.newPassword !== profileData.confirmPassword
     ) {
-      alert("Новые пароли не совпадают");
+      notify.error("Новые пароли не совпадают");
       return;
     }
 
@@ -154,16 +175,16 @@ export default function SettingsPage() {
           newPassword: "",
           confirmPassword: "",
         });
-        alert("Профиль обновлен");
+        notify.success("Профиль обновлен");
       } else {
         const error = await response.json();
-        alert(error.error || "Ошибка при обновлении профиля");
+        notify.error(error.error || "Ошибка при обновлении профиля");
       }
     } catch (error) {
       console.error("Ошибка:", error);
-      alert("Ошибка при обновлении профиля");
+      notify.error("Ошибка при обновлении профиля");
     }
-  };
+  });
 
   const resetForm = () => {
     setFormData({
@@ -191,8 +212,8 @@ export default function SettingsPage() {
     setShowAddForm(true);
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("Вы уверены, что хотите удалить пользователя?")) return;
+  const handleDelete = guard(async (id: number) => {
+    if (!await confirmAction("Вы уверены, что хотите удалить пользователя?", { danger: true })) return;
 
     try {
       const response = await fetch(`/api/users/${id}`, {
@@ -201,18 +222,18 @@ export default function SettingsPage() {
 
       if (response.ok) {
         fetchUsers();
-        alert("Пользователь удален");
+        notify.success("Пользователь удален");
       } else {
         const error = await response.json();
-        alert(error.error || "Ошибка при удалении");
+        notify.error(error.error || "Ошибка при удалении");
       }
     } catch (error) {
       console.error("Ошибка:", error);
-      alert("Ошибка при удалении");
+      notify.error("Ошибка при удалении");
     }
-  };
+  });
 
-  const toggleUserStatus = async (id: number, currentStatus: boolean) => {
+  const toggleUserStatus = guard(async (id: number, currentStatus: boolean) => {
     try {
       const response = await fetch(`/api/users/${id}/toggle-active`, {
         method: "POST",
@@ -224,18 +245,18 @@ export default function SettingsPage() {
 
       if (response.ok) {
         fetchUsers();
-        alert(
+        notify.success(
           `Пользователь ${!currentStatus ? "активирован" : "деактивирован"}`
         );
       } else {
         const error = await response.json();
-        alert(error.error || "Ошибка при изменении статуса");
+        notify.error(error.error || "Ошибка при изменении статуса");
       }
     } catch (error) {
       console.error("Ошибка:", error);
-      alert("Ошибка при изменении статуса");
+      notify.error("Ошибка при изменении статуса");
     }
-  };
+  });
 
   const getRoleText = (role: string) => {
     switch (role) {
@@ -473,7 +494,7 @@ export default function SettingsPage() {
             </div>
 
             <div className="flex justify-end">
-              <button type="submit" className="btn btn-primary">
+              <button disabled={submitting} type="submit" className="btn btn-primary">
                 Сохранить изменения
               </button>
             </div>
@@ -651,6 +672,7 @@ export default function SettingsPage() {
                                 />
                               </svg>
                             </button>
+                            {user.id !== currentUser?.id && (
                             <button
                               onClick={() =>
                                 toggleUserStatus(user.id, user.is_active)
@@ -689,8 +711,11 @@ export default function SettingsPage() {
                                 )}
                               </svg>
                             </button>
-                            {user.username !== "admin" && (
+                            )}
+                            {/* Свою учетную запись нельзя деактивировать или удалить */}
+                            {user.id !== currentUser?.id && (
                               <button
+                                disabled={submitting}
                                 onClick={() => handleDelete(user.id)}
                                 className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-red-50 hover:text-red-600"
                                 title="Удалить"
@@ -777,8 +802,9 @@ export default function SettingsPage() {
                   <button
                     onClick={async () => {
                       if (
-                        confirm(
-                          "Вы уверены, что хотите очистить всю базу данных? Это действие необратимо!"
+                        await confirmAction(
+                          "Вы уверены, что хотите очистить всю базу данных? Это действие необратимо!",
+                          { danger: true }
                         )
                       ) {
                         try {
@@ -795,17 +821,22 @@ export default function SettingsPage() {
                             }
                           );
                           if (response.ok) {
-                            alert("База данных очищена");
+                            // Администратор пересоздан с тем же паролем —
+                            // показываем сообщение сервера и входим заново
+                            const data = await response.json().catch(() => ({}));
+                            notify.success(data.message || "База данных очищена");
                             setClearDBPassword("");
-                            window.location.reload();
+                            setTimeout(() => {
+                              window.location.href = "/login";
+                            }, 2500);
                           } else {
                             const error = await response.json();
-                            alert(
+                            notify.error(
                               error.error || "Ошибка при очистке базы данных"
                             );
                           }
                         } catch (error) {
-                          alert("Ошибка при очистке базы данных");
+                          notify.error("Ошибка при очистке базы данных");
                         }
                       }
                     }}
@@ -950,7 +981,7 @@ export default function SettingsPage() {
                   >
                     Отмена
                   </button>
-                  <button type="submit" className="btn btn-primary flex-1">
+                  <button disabled={submitting} type="submit" className="btn btn-primary flex-1">
                     {editingUser ? "Обновить" : "Создать"}
                   </button>
                 </div>

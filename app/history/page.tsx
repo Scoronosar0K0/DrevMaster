@@ -29,18 +29,31 @@ export default function HistoryPage() {
     fetchLogs();
   }, []);
 
-  const fetchLogs = async () => {
+  // Начало местных суток в UTC ('YYYY-MM-DD HH:MM:SS'), как даты в базе.
+  // Так фильтр совпадает с датами, которые пользователь видит в списке
+  const localDayStartUtc = (day: string, addDays = 0) => {
+    const date = new Date(day + "T00:00");
+    date.setDate(date.getDate() + addDays);
+    return date.toISOString().slice(0, 19).replace("T", " ");
+  };
+
+  const fetchLogs = async (
+    filters = { filterAction, filterEntityType, filterUser, dateFrom, dateTo }
+  ) => {
     try {
       const params = new URLSearchParams();
-      if (filterAction) params.append("action", filterAction);
-      if (filterEntityType) params.append("entity_type", filterEntityType);
-      if (filterUser) params.append("user", filterUser);
-      if (dateFrom) params.append("date_from", dateFrom);
-      if (dateTo) params.append("date_to", dateTo);
+      if (filters.filterAction) params.append("action", filters.filterAction);
+      if (filters.filterEntityType)
+        params.append("entity_type", filters.filterEntityType);
+      if (filters.filterUser) params.append("user", filters.filterUser);
+      if (filters.dateFrom)
+        params.append("created_from", localDayStartUtc(filters.dateFrom));
+      if (filters.dateTo)
+        params.append("created_before", localDayStartUtc(filters.dateTo, 1));
 
       const response = await fetch(`/api/activity-logs?${params.toString()}`);
       const data = await response.json();
-      setLogs(data);
+      setLogs(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Ошибка загрузки логов:", error);
     } finally {
@@ -54,6 +67,15 @@ export default function HistoryPage() {
     setFilterUser("");
     setDateFrom("");
     setDateTo("");
+    // Запрашиваем без фильтров сразу: состояние обновится только после рендера
+    setLoading(true);
+    fetchLogs({
+      filterAction: "",
+      filterEntityType: "",
+      filterUser: "",
+      dateFrom: "",
+      dateTo: "",
+    });
   };
 
   const applyFilters = () => {
@@ -212,6 +234,11 @@ export default function HistoryPage() {
                 <option value="займ_погашен">Займ погашен</option>
                 <option value="заказ_создан">Заказ создан</option>
                 <option value="продажа">Продажа</option>
+                <option value="продажа_менеджера">Продажа менеджера</option>
+                <option value="оплата_займа">Оплата займа</option>
+                <option value="обработка_перевода">Обработка перевода</option>
+                <option value="создание_расхода">Расход</option>
+                <option value="создание_поступления">Поступление</option>
                 <option value="вход">Вход</option>
               </select>
             </div>
@@ -231,7 +258,11 @@ export default function HistoryPage() {
                 <option value="supplier">Поставщики</option>
                 <option value="order">Заказы</option>
                 <option value="loan">Займы</option>
-                <option value="sale">Продажи</option>
+                <option value="expense">Расходы</option>
+                <option value="income">Поступления</option>
+                <option value="manager">Менеджеры</option>
+                <option value="manager_sale">Продажи менеджеров</option>
+                <option value="transfer">Переводы</option>
                 <option value="user">Пользователи</option>
                 <option value="auth">Аутентификация</option>
                 <option value="system">Система</option>
@@ -283,10 +314,7 @@ export default function HistoryPage() {
               Применить фильтры
             </button>
             <button
-              onClick={() => {
-                clearFilters();
-                applyFilters();
-              }}
+              onClick={clearFilters}
               className="btn btn-secondary"
             >
               Очистить

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { PageHeader, StatCard } from "@/components/ui";
 import { formatDateTime, formatMoney } from "@/lib/format";
+import { notify } from "@/components/feedback";
 
 interface AnalyticsData {
   totalRevenue: number;
@@ -50,7 +51,7 @@ export default function AnalyticsPage() {
     try {
       const response = await fetch(`/api/analytics?period=${selectedPeriod}`);
       if (response.status === 403) {
-        alert("Доступ запрещен! Только для администраторов.");
+        notify.error("Доступ запрещен! Только для администраторов.");
         router.push("/");
         return;
       }

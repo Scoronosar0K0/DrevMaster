@@ -67,7 +67,7 @@ export default function ManagerCashPage() {
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <PageHeader
         title="Мои финансы"
-        description="Информация о займах и задолженности"
+        description="Долг за полученный от компании товар и его оплата"
         actions={
           <>
             <button
@@ -90,7 +90,7 @@ export default function ManagerCashPage() {
       {/* Сводка */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <StatCard
-          label="Общая сумма займов"
+          label="Получено товара на сумму"
           value={formatMoney(summary.totalLoans)}
           icon="wallet"
           tone="neutral"
@@ -109,19 +109,19 @@ export default function ManagerCashPage() {
         />
       </div>
 
-      {/* История займов */}
+      {/* Долги за товар */}
       <section className="card mt-6 overflow-hidden">
         <div className="card-header">
           <h2 className="text-base font-semibold text-ink-900">
-            История займов
+            Долги за товар
           </h2>
           <p className="mt-0.5 text-sm text-ink-500">
-            Список всех ваших займов и их статус
+            Товар, переданный вам администратором, по цене передачи. Долг гасится переводами
           </p>
         </div>
         {loans.length === 0 ? (
           <div className="px-6 py-12 text-center text-sm text-ink-500">
-            У вас пока нет займов
+            У вас пока нет долгов за товар
           </div>
         ) : (
           <div className="overflow-x-auto">

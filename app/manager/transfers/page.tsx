@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Icon from "@/components/Icon";
 import { PageHeader } from "@/components/ui";
 import { formatDate, formatMoney } from "@/lib/format";
+import { notify } from "@/components/feedback";
 
 interface Transfer {
   id: number;
@@ -26,6 +27,26 @@ export default function ManagerTransfersPage() {
   });
   const router = useRouter();
 
+  // Защита от повторного нажатия: пока запрос выполняется, повторный вызов
+  // игнорируется (иначе двойной клик проводил бы оплату или продажу дважды)
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const guard =
+    <A extends unknown[]>(fn: (...args: A) => Promise<void>) =>
+    async (...args: A) => {
+      const event = args[0] as { preventDefault?: () => void } | undefined;
+      event?.preventDefault?.();
+      if (submittingRef.current) return;
+      submittingRef.current = true;
+      setSubmitting(true);
+      try {
+        await fn(...args);
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
+    };
+
   useEffect(() => {
     fetchTransfers();
   }, []);
@@ -46,11 +67,11 @@ export default function ManagerTransfersPage() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = guard(async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!transferForm.amount || transferForm.amount <= 0) {
-      alert("Укажите корректную сумму");
+      notify.error("Укажите корректную сумму");
       return;
     }
 
@@ -66,7 +87,7 @@ export default function ManagerTransfersPage() {
       });
 
       if (response.ok) {
-        alert("Заявка на перевод отправлена!");
+        notify.success("Заявка на перевод отправлена!");
         setTransferForm({
           amount: 0,
           description: "",
@@ -75,13 +96,13 @@ export default function ManagerTransfersPage() {
         fetchTransfers();
       } else {
         const error = await response.json();
-        alert(`Ошибка: ${error.error}`);
+        notify.error(`Ошибка: ${error.error}`);
       }
     } catch (error) {
       console.error("Ошибка создания перевода:", error);
-      alert("Ошибка создания перевода");
+      notify.error("Ошибка создания перевода");
     }
-  };
+  });
 
   if (loading) {
     return (
@@ -202,6 +223,10 @@ export default function ManagerTransfersPage() {
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
+                <p className="text-sm text-ink-500">
+                  После подтверждения администратором сумма поступит в кассу и
+                  уменьшит ваш долг за товар
+                </p>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-ink-700">
                     Сумма ($) *
@@ -242,7 +267,7 @@ export default function ManagerTransfersPage() {
                 </div>
 
                 <div className="mt-6 flex gap-3">
-                  <button type="submit" className="btn btn-primary flex-1">
+                  <button disabled={submitting} type="submit" className="btn btn-primary flex-1">
                     Отправить заявку
                   </button>
                   <button

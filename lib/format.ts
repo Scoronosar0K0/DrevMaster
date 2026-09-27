@@ -52,3 +52,11 @@ const moneyFormatter = new Intl.NumberFormat("en-US", {
 export function formatMoney(value: number | null | undefined): string {
   return moneyFormatter.format(Number(value) || 0);
 }
+
+// Сегодняшняя дата в формате YYYY-MM-DD по местному времени пользователя
+// (toISOString() дал бы дату по UTC — в первые часы суток это вчерашний день)
+export function todayLocal(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Icon from "@/components/Icon";
 import { PageHeader } from "@/components/ui";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate, formatMoney, todayLocal } from "@/lib/format";
+import { notify } from "@/components/feedback";
 
 interface WarehouseItem {
   id: number;
@@ -31,9 +32,29 @@ export default function ManagerWarehousePage() {
     price: 0,
     buyer_name: "",
     description: "",
-    date: new Date().toISOString().split("T")[0],
+    date: todayLocal(),
   });
   const router = useRouter();
+
+  // Защита от повторного нажатия: пока запрос выполняется, повторный вызов
+  // игнорируется (иначе двойной клик проводил бы оплату или продажу дважды)
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const guard =
+    <A extends unknown[]>(fn: (...args: A) => Promise<void>) =>
+    async (...args: A) => {
+      const event = args[0] as { preventDefault?: () => void } | undefined;
+      event?.preventDefault?.();
+      if (submittingRef.current) return;
+      submittingRef.current = true;
+      setSubmitting(true);
+      try {
+        await fn(...args);
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
+    };
 
   useEffect(() => {
     fetchWarehouseItems();
@@ -55,23 +76,23 @@ export default function ManagerWarehousePage() {
     }
   };
 
-  const handleSellItem = async () => {
+  const handleSellItem = guard(async () => {
     if (!selectedItem) return;
 
     if (sellForm.value <= 0 || sellForm.value > selectedItem.remaining_value) {
-      alert(
+      notify.error(
         `Укажите корректное количество (доступно: ${selectedItem.remaining_value} ${selectedItem.measurement})`
       );
       return;
     }
 
     if (sellForm.price <= 0) {
-      alert("Укажите корректную цену");
+      notify.error("Укажите корректную цену");
       return;
     }
 
     if (!sellForm.buyer_name.trim()) {
-      alert("Укажите имя покупателя");
+      notify.error("Укажите имя покупателя");
       return;
     }
 
@@ -90,7 +111,7 @@ export default function ManagerWarehousePage() {
       });
 
       if (response.ok) {
-        alert("Товар успешно продан!");
+        notify.success("Товар успешно продан!");
         setShowSellDialog(false);
         setSelectedItem(null);
         setSellForm({
@@ -98,18 +119,18 @@ export default function ManagerWarehousePage() {
           price: 0,
           buyer_name: "",
           description: "",
-          date: new Date().toISOString().split("T")[0],
+          date: todayLocal(),
         });
         fetchWarehouseItems();
       } else {
         const error = await response.json();
-        alert(`Ошибка: ${error.error}`);
+        notify.error(`Ошибка: ${error.error}`);
       }
     } catch (error) {
       console.error("Ошибка продажи товара:", error);
-      alert("Ошибка продажи товара");
+      notify.error("Ошибка продажи товара");
     }
-  };
+  });
 
   const openSellDialog = (item: WarehouseItem) => {
     setSelectedItem(item);
@@ -118,7 +139,7 @@ export default function ManagerWarehousePage() {
       price: 0,
       buyer_name: "",
       description: "",
-      date: new Date().toISOString().split("T")[0],
+      date: todayLocal(),
     });
     setShowSellDialog(true);
   };
@@ -183,7 +204,7 @@ export default function ManagerWarehousePage() {
                   <th className="table-header">Поставщик</th>
                   <th className="table-header text-right">Приобретено</th>
                   <th className="table-header text-right">Доступно</th>
-                  <th className="table-header text-right">Цена покупки</th>
+                  <th className="table-header text-right">Сумма покупки</th>
                   <th className="table-header">Дата</th>
                   <th className="table-header">Действия</th>
                 </tr>
@@ -362,6 +383,7 @@ export default function ManagerWarehousePage() {
 
               <div className="mt-6 flex gap-3">
                 <button
+                  disabled={submitting}
                   onClick={handleSellItem}
                   className="btn btn-primary flex-1"
                 >

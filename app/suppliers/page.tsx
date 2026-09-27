@@ -1,8 +1,9 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/Icon";
 import { PageHeader } from "@/components/ui";
 import { formatDate } from "@/lib/format";
+import { notify, confirmAction } from "@/components/feedback";
 
 const SEARCH_PATH = "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z";
 const EDIT_PATH =
@@ -63,6 +64,26 @@ export default function SuppliersPage() {
   const [newItemName, setNewItemName] = useState("");
   const [addingItem, setAddingItem] = useState(false);
 
+  // Защита от повторного нажатия: пока запрос выполняется, повторный вызов
+  // игнорируется (иначе двойной клик проводил бы оплату или продажу дважды)
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const guard =
+    <A extends unknown[]>(fn: (...args: A) => Promise<void>) =>
+    async (...args: A) => {
+      const event = args[0] as { preventDefault?: () => void } | undefined;
+      event?.preventDefault?.();
+      if (submittingRef.current) return;
+      submittingRef.current = true;
+      setSubmitting(true);
+      try {
+        await fn(...args);
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
+    };
+
   useEffect(() => {
     fetchSuppliers();
   }, []);
@@ -117,7 +138,7 @@ export default function SuppliersPage() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = guard(async (e: React.FormEvent) => {
     e.preventDefault();
 
     try {
@@ -138,16 +159,16 @@ export default function SuppliersPage() {
       if (response.ok) {
         fetchSuppliers();
         resetForm();
-        alert(editingSupplier ? "Поставщик обновлен" : "Поставщик создан");
+        notify.success(editingSupplier ? "Поставщик обновлен" : "Поставщик создан");
       } else {
         const error = await response.json();
-        alert(error.error || "Ошибка при сохранении");
+        notify.error(error.error || "Ошибка при сохранении");
       }
     } catch (error) {
       console.error("Ошибка:", error);
-      alert("Ошибка при сохранении");
+      notify.error("Ошибка при сохранении");
     }
-  };
+  });
 
   const resetForm = () => {
     setFormData({
@@ -175,8 +196,8 @@ export default function SuppliersPage() {
     setShowAddForm(true);
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("Вы уверены, что хотите удалить поставщика?")) return;
+  const handleDelete = guard(async (id: number) => {
+    if (!await confirmAction("Вы уверены, что хотите удалить поставщика?", { danger: true })) return;
 
     try {
       const response = await fetch(`/api/suppliers/${id}`, {
@@ -185,18 +206,18 @@ export default function SuppliersPage() {
 
       if (response.ok) {
         fetchSuppliers();
-        alert("Поставщик удален");
+        notify.success("Поставщик удален");
       } else {
         const error = await response.json();
-        alert(error.error || "Ошибка при удалении");
+        notify.error(error.error || "Ошибка при удалении");
       }
     } catch (error) {
       console.error("Ошибка:", error);
-      alert("Ошибка при удалении");
+      notify.error("Ошибка при удалении");
     }
-  };
+  });
 
-  const handleAddItem = async () => {
+  const handleAddItem = guard(async () => {
     if (!newItemName.trim() || !selectedSupplier) return;
 
     setAddingItem(true);
@@ -215,24 +236,24 @@ export default function SuppliersPage() {
       if (response.ok) {
         setNewItemName("");
         fetchSupplierItems(selectedSupplier.id);
-        alert("Товар добавлен");
+        notify.success("Товар добавлен");
       } else {
         const error = await response.json();
-        alert(error.error || "Ошибка при добавлении товара");
+        notify.error(error.error || "Ошибка при добавлении товара");
       }
     } catch (error) {
       console.error("Ошибка:", error);
-      alert("Ошибка при добавлении товара");
+      notify.error("Ошибка при добавлении товара");
     } finally {
       setAddingItem(false);
     }
-  };
+  });
 
-  const handleDeleteItem = async (itemId: number) => {
-    if (!confirm("Удалить товар?")) return;
+  const handleDeleteItem = guard(async (itemId: number) => {
+    if (!await confirmAction("Удалить товар?", { danger: true })) return;
 
     try {
-      const response = await fetch(`/api/supplier-items/${itemId}`, {
+      const response = await fetch(`/api/suppliers/items/${itemId}`, {
         method: "DELETE",
       });
 
@@ -240,15 +261,16 @@ export default function SuppliersPage() {
         if (selectedSupplier) {
           fetchSupplierItems(selectedSupplier.id);
         }
-        alert("Товар удален");
+        notify.success("Товар удален");
       } else {
-        alert("Ошибка при удалении товара");
+        const data = await response.json().catch(() => ({}));
+        notify.error(data.error || "Ошибка при удалении товара");
       }
     } catch (error) {
       console.error("Ошибка:", error);
-      alert("Ошибка при удалении товара");
+      notify.error("Ошибка при удалении товара");
     }
-  };
+  });
 
   const openItemsModal = async (supplier: Supplier) => {
     setSelectedSupplier(supplier);
@@ -450,6 +472,7 @@ export default function SuppliersPage() {
                     </svg>
                   </button>
                   <button
+                    disabled={submitting}
                     onClick={() => handleDelete(supplier.id)}
                     className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-red-50 hover:text-red-600"
                     title="Удалить"
@@ -598,7 +621,7 @@ export default function SuppliersPage() {
                   >
                     Отмена
                   </button>
-                  <button type="submit" className="btn btn-primary flex-1">
+                  <button disabled={submitting} type="submit" className="btn btn-primary flex-1">
                     {editingSupplier ? "Обновить" : "Создать"}
                   </button>
                 </div>
@@ -647,7 +670,7 @@ export default function SuppliersPage() {
                   />
                   <button
                     onClick={handleAddItem}
-                    disabled={!newItemName.trim() || addingItem}
+                    disabled={submitting || (!newItemName.trim() || addingItem)}
                     className="btn btn-primary shrink-0"
                   >
                     {addingItem ? "Добавление..." : "Добавить"}
@@ -681,6 +704,7 @@ export default function SuppliersPage() {
                         </p>
                       </div>
                       <button
+                        disabled={submitting}
                         onClick={() => handleDeleteItem(item.id)}
                         className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-red-50 hover:text-red-600"
                         title="Удалить товар"

@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Icon, { type IconName } from "@/components/Icon";
+import { FeedbackHost } from "@/components/feedback";
 
 interface User {
   id: number;
@@ -121,7 +122,17 @@ export default function Navigation({
     }
     // Роль и имя берем с сервера: localStorage может быть устаревшим
     fetch("/api/auth/me")
-      .then((r) => (r.ok ? r.json() : null))
+      .then(async (r) => {
+        // 401: учетную запись удалили, деактивировали или сменили роль —
+        // завершаем сессию, иначе все запросы страницы будут отклоняться
+        if (r.status === 401) {
+          await fetch("/api/auth/login", { method: "DELETE" }).catch(() => {});
+          localStorage.removeItem("drevmaster_user");
+          window.location.href = "/login";
+          return null;
+        }
+        return r.ok ? r.json() : null;
+      })
       .then((data) => {
         if (data?.user) {
           setUser(data.user);
@@ -136,7 +147,14 @@ export default function Navigation({
     setIsMobileMenuOpen(false);
   }, [pathname]);
 
-  if (isLoginPage) return <>{children}</>;
+  if (isLoginPage) {
+    return (
+      <>
+        {children}
+        <FeedbackHost />
+      </>
+    );
+  }
 
   const menu = user ? getMenu(user.role) : [];
   const homeHref = user?.role === "manager" ? "/manager" : "/";
@@ -186,6 +204,7 @@ export default function Navigation({
                   <Link
                     key={item.href}
                     href={item.href}
+                    onClick={() => setIsMobileMenuOpen(false)}
                     aria-current={active ? "page" : undefined}
                     className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                       active
@@ -276,6 +295,7 @@ export default function Navigation({
       )}
 
       <main className="lg:pl-64">{children}</main>
+      <FeedbackHost />
     </div>
   );
 }
