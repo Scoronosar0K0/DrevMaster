@@ -164,9 +164,9 @@ export async function POST(
         ).run(
           remainingValue,
           remainingPrice,
-          extras - paidExtras,
           Math.max(1, (order.containers || 1) - containers.length),
           remainingLoads,
+          extras - paidExtras,
           orderId
         );
       }

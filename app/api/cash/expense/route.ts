@@ -53,13 +53,15 @@ export async function POST(request: NextRequest) {
         expenseType = "order";
         relatedId = order_id;
 
-        // Увеличиваем цену заказа на сумму расхода
+        // Увеличиваем цену заказа на сумму расхода и запоминаем расход
+        // отдельно: при оплате займа он переносится в оплаченный заказ
         const updateOrder = db.prepare(`
           UPDATE orders 
-          SET total_price = COALESCE(total_price, 0) + ?
+          SET total_price = COALESCE(total_price, 0) + ?,
+              extra_costs = COALESCE(extra_costs, 0) + ?
           WHERE id = ?
         `);
-        updateOrder.run(amount, order_id);
+        updateOrder.run(amount, amount, order_id);
 
         // Логируем увеличение цены заказа
         logActivity(session.userId, "увеличение_цены_заказа", "order", `Заказ ${
