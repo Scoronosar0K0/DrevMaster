@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logActivity } from "@/lib/activity";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
+import { QTY_EPS, roundQty, sameQty } from "@/lib/quantity";
 
 initDatabase();
 
@@ -7,6 +10,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const body = await request.json();
     const {
@@ -20,7 +26,12 @@ export async function POST(
     } = body;
     const orderId = parseInt(params.id);
 
-    if (!value || value <= 0 || !price || price <= 0 || !buyer_name || !date) {
+    if (
+      !(Number.isFinite(value) && value > 0) ||
+      !(Number.isFinite(price) && price > 0) ||
+      !buyer_name ||
+      !date
+    ) {
       return NextResponse.json(
         { error: "Все поля должны быть заполнены корректно" },
         { status: 400 }
@@ -38,97 +49,82 @@ export async function POST(
       );
     }
 
-    if (value > order.value) {
+    if (value > order.value + QTY_EPS) {
       return NextResponse.json(
         { error: "Объем продажи не может превышать доступный объем" },
         { status: 400 }
       );
     }
 
+    // Продажа менеджеру в долг: менеджер обязателен и должен быть активен.
+    // Раньше без выбранного менеджера продажа молча записывалась как доход кассы
+    let manager: any = null;
+    if (link_to_manager) {
+      manager = manager_id
+        ? db
+            .prepare(
+              "SELECT * FROM users WHERE id = ? AND role = 'manager' AND is_active = true"
+            )
+            .get(manager_id)
+        : null;
+      if (!manager) {
+        return NextResponse.json(
+          { error: "Выберите активного менеджера для продажи в долг" },
+          { status: 400 }
+        );
+      }
+    }
+
     // Начинаем транзакцию
     const transaction = db.transaction(() => {
       const totalSalePrice = value * price;
 
-      // Создаем запись продажи
-      const insertSale = db.prepare(`
-        INSERT INTO sales (order_id, buyer_name, sale_value, sale_price, description, date)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `);
-      insertSale.run(
+      // Создаем запись продажи. Для продажи менеджеру сохраняем его id:
+      // по нему менеджер видит товар на своем складе (имя может меняться)
+      db.prepare(
+        `
+        INSERT INTO sales (order_id, buyer_name, sale_value, sale_price, description, date, manager_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `
+      ).run(
         orderId,
-        buyer_name,
+        manager ? manager.name : buyer_name,
         value,
         totalSalePrice,
         description || null,
-        date
+        date,
+        manager ? manager.id : null
       );
 
       // Обрабатываем связь с менеджером
-      if (link_to_manager && manager_id) {
-        // Проверяем, что менеджер существует
-        const manager = db
-          .prepare(
-            "SELECT * FROM users WHERE id = ? AND role = 'manager' AND is_active = true"
-          )
-          .get(manager_id) as any;
+      if (manager) {
+        // Находим или создаем партнерскую запись менеджера (на ней хранится долг)
+        let managerPartner = db
+          .prepare("SELECT id FROM partners WHERE user_id = ? AND id != 0")
+          .get(manager.id) as any;
 
-        if (manager) {
-          // Автоматически заполняем имя покупателя именем менеджера
-          const actualBuyerName = manager.name;
-
-          // Обновляем запись продажи с именем менеджера
-          const updateSale = db.prepare(`
-            UPDATE sales SET buyer_name = ? WHERE rowid = last_insert_rowid()
-          `);
-          updateSale.run(actualBuyerName);
-
-          // Находим или создаем партнера для менеджера
-          let managerPartner = db
-            .prepare("SELECT id FROM partners WHERE user_id = ?")
-            .get(manager_id) as any;
-
-          if (!managerPartner) {
-            // Создаем партнера для менеджера автоматически
-            const insertPartner = db.prepare(`
+        if (!managerPartner) {
+          const partnerResult = db
+            .prepare(
+              `
               INSERT INTO partners (name, contact_info, user_id)
               VALUES (?, ?, ?)
-            `);
-            const partnerResult = insertPartner.run(
-              manager.name,
-              manager.email || "Нет email",
-              manager_id
-            );
-            managerPartner = { id: partnerResult.lastInsertRowid };
-          }
-
-          // Создаем новый займ для менеджера (увеличиваем его долг)
-          const insertManagerLoan = db.prepare(`
-            INSERT INTO loans (partner_id, order_id, amount, is_paid)
-            VALUES (?, ?, ?, false)
-          `);
-          insertManagerLoan.run(managerPartner.id, orderId, totalSalePrice);
-
-            // Логируем создание займа
-            const insertLoanLog = db.prepare(`
-              INSERT INTO activity_logs (user_id, action, entity_type, details)
-              VALUES (?, 'займ_создан_продажа', 'loan', ?)
-            `);
-            insertLoanLog.run(
-              manager_id,
-              `Создан займ на сумму $${totalSalePrice} за покупку товара из заказа ${order.order_number}. Менеджер должен оплатить после перепродажи.`
-            );
-        } else {
-          // Менеджер не найден, добавляем доход
-          const insertIncome = db.prepare(`
-            INSERT INTO expenses (amount, description, type, related_id, created_at)
-            VALUES (?, ?, 'other', ?, datetime('now'))
-          `);
-          insertIncome.run(
-            -totalSalePrice, // Отрицательная сумма = доход
-            `Продажа товара (менеджер не найден) - доход $${totalSalePrice}`,
-            orderId
-          );
+            `
+            )
+            .run(manager.name, manager.email || "Нет email", manager.id);
+          managerPartner = { id: partnerResult.lastInsertRowid };
         }
+
+        // Долг менеджера по цене передачи товара. Это не деньги кассы:
+        // в баланс он попадет, только когда менеджер заплатит
+        db.prepare(
+          `
+          INSERT INTO loans (partner_id, order_id, amount, is_paid, kind)
+          VALUES (?, ?, ?, false, 'manager_debt')
+        `
+        ).run(managerPartner.id, orderId, totalSalePrice);
+
+        logActivity(session.userId, "займ_создан_продажа", "loan", `Создан займ на сумму $${totalSalePrice} за покупку товара из заказа ${order.order_number}. Менеджер должен оплатить после перепродажи.`);
       } else {
         // Обычная продажа без связи с менеджером - создаем отрицательный расход (доход)
         const insertIncome = db.prepare(`
@@ -142,7 +138,7 @@ export async function POST(
         );
       }
 
-      if (value === order.value) {
+      if (sameQty(value, order.value)) {
         // Полная продажа - меняем статус заказа на "sold"
         const updateOrder = db.prepare(`
           UPDATE orders SET status = 'sold' WHERE id = ?
@@ -150,7 +146,7 @@ export async function POST(
         updateOrder.run(orderId);
       } else {
         // Частичная продажа - уменьшаем объем заказа
-        const remainingValue = order.value - value;
+        const remainingValue = roundQty(order.value - value);
         const pricePerUnit = order.total_price / order.value;
         const remainingTotalPrice = remainingValue * pricePerUnit;
 
@@ -163,16 +159,12 @@ export async function POST(
       }
 
       // Логируем активность
-      const insertLog = db.prepare(`
-        INSERT INTO activity_logs (user_id, action, entity_type, details)
-        VALUES (?, 'продажа', 'order', ?)
-      `);
       const logDetails =
         link_to_manager && manager_id
           ? `Заказ ${order.order_number}: продажа ${value} ${order.measurement} за $${totalSalePrice} покупателю ${buyer_name}. Связано с менеджером ID: ${manager_id}`
           : `Заказ ${order.order_number}: продажа ${value} ${order.measurement} за $${totalSalePrice} покупателю ${buyer_name}`;
 
-      insertLog.run(link_to_manager && manager_id ? manager_id : 1, logDetails);
+      logActivity(session.userId, "продажа", "order", logDetails);
     });
 
     transaction();

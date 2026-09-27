@@ -26,6 +26,56 @@ function addColumnIfMissing(sql: string) {
 
 let isInitialized = false;
 
+function repairOrdersOldReferences() {
+  const broken = db
+    .prepare(
+      "SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name != 'orders_old' AND sql LIKE '%orders_old%'"
+    )
+    .all() as { name: string; sql: string }[];
+  if (broken.length === 0) return;
+
+  console.log(
+    `Исправляем внешние ключи на orders_old в таблицах: ${broken
+      .map((t) => t.name)
+      .join(", ")}`
+  );
+
+  db.pragma("foreign_keys = OFF");
+  // Не даем SQLite переписывать ссылки других таблиц при переименовании
+  db.pragma("legacy_alter_table = ON");
+  try {
+    db.transaction(() => {
+      for (const table of broken) {
+        const tmp = `${table.name}__repair`;
+        const fixedSql = table.sql
+          .replace(/["'`]?\borders_old\b["'`]?/g, "orders")
+          .replace(
+            /^CREATE TABLE\s+(IF NOT EXISTS\s+)?["'`]?\w+["'`]?/i,
+            `CREATE TABLE "${tmp}"`
+          );
+        const columns = (db.pragma(`table_info("${table.name}")`) as any[])
+          .map((col) => `"${col.name}"`)
+          .join(", ");
+
+        db.exec(fixedSql);
+        db.exec(
+          `INSERT INTO "${tmp}" (${columns}) SELECT ${columns} FROM "${table.name}"`
+        );
+        db.exec(`DROP TABLE "${table.name}"`);
+        db.exec(`ALTER TABLE "${tmp}" RENAME TO "${table.name}"`);
+      }
+    })();
+  } finally {
+    db.pragma("legacy_alter_table = OFF");
+    db.pragma("foreign_keys = ON");
+  }
+
+  const problems = db.pragma("foreign_key_check") as unknown[];
+  if (problems.length > 0) {
+    console.log("Нарушения внешних ключей после ремонта:", problems);
+  }
+}
+
 // Типы данных
 export interface User {
   id: number;
@@ -449,6 +499,37 @@ export function initDatabase() {
     console.log("Ошибка при проверке схемы loans:", error);
   }
 
+  // Ремонт после старой миграции 'in_container': она переименовывала orders в
+  // orders_old и удаляла ее, а SQLite при переименовании переписал внешние
+  // ключи других таблиц на orders_old. В таких базах любая вставка продажи,
+  // займа или долга поставщика с order_id падает с "no such table: orders_old".
+  // Пересоздаем затронутые таблицы с исправленной схемой, сохраняя данные
+  repairOrdersOldReferences();
+
+  // Миграция: вид займа.
+  //   partner_loan — деньги, полученные от партнера или администратора
+  //                  (входят в баланс кассы, их нужно вернуть);
+  //   manager_debt — долг менеджера за переданный ему товар (деньги еще не
+  //                  получены, в баланс кассы не входят).
+  // Существующие займы на партнерских записях менеджеров — это их долги.
+  const loanColumns = db.pragma("table_info(loans)") as any[];
+  if (!loanColumns.some((col) => col.name === "kind")) {
+    console.log("Добавляем колонку 'kind' в таблицу loans...");
+    addColumnIfMissing(
+      `ALTER TABLE loans ADD COLUMN kind TEXT NOT NULL DEFAULT 'partner_loan' CHECK (kind IN ('partner_loan', 'manager_debt'))`
+    );
+    const reclassified = db
+      .prepare(
+        `UPDATE loans SET kind = 'manager_debt'
+         WHERE partner_id IN (
+           SELECT p.id FROM partners p JOIN users u ON p.user_id = u.id
+           WHERE u.role = 'manager'
+         )`
+      )
+      .run();
+    console.log(`Займов менеджеров помечено как долг: ${reclassified.changes}`);
+  }
+
   // Таблица продаж
   db.exec(`
     CREATE TABLE IF NOT EXISTS sales (
@@ -463,6 +544,32 @@ export function initDatabase() {
       FOREIGN KEY (order_id) REFERENCES orders (id)
     )
   `);
+
+  // Миграция: продажа менеджеру хранит id менеджера. Раньше менеджер
+  // определялся только по buyer_name, поэтому переименование менеджера
+  // «теряло» его товар, а однофамильцы видели чужой склад.
+  // Существующие продажи связываем по долгу менеджера за тот же заказ
+  const salesColumns = db.pragma("table_info(sales)") as any[];
+  if (!salesColumns.some((col) => col.name === "manager_id")) {
+    console.log("Добавляем колонку 'manager_id' в таблицу sales...");
+    addColumnIfMissing(
+      `ALTER TABLE sales ADD COLUMN manager_id INTEGER REFERENCES users (id)`
+    );
+    db.prepare(
+      `UPDATE sales SET manager_id = (
+         SELECT u.id FROM users u
+         JOIN partners p ON p.user_id = u.id
+         JOIN loans l ON l.partner_id = p.id AND l.order_id = sales.order_id
+         WHERE u.role = 'manager' AND u.name = sales.buyer_name
+         LIMIT 1
+       )
+       WHERE manager_id IS NULL`
+    ).run();
+    const linked = db
+      .prepare("SELECT COUNT(*) as count FROM sales WHERE manager_id IS NOT NULL")
+      .get() as { count: number };
+    console.log(`Продажи, связанные с менеджерами: ${linked.count}`);
+  }
 
   // Таблица расходов (для отслеживания потраченных средств без изменения займов)
   db.exec(`
@@ -559,8 +666,12 @@ export function initDatabase() {
       // Отключаем foreign keys временно
       db.pragma("foreign_keys = OFF");
 
-      // Переименовываем старую таблицу
+      // Переименовываем старую таблицу. legacy_alter_table: иначе SQLite
+      // перепишет внешние ключи loans/sales/supplier_debts на orders_old,
+      // которая ниже удаляется, и все вставки в эти таблицы начнут падать
+      db.pragma("legacy_alter_table = ON");
       db.exec("ALTER TABLE orders RENAME TO orders_old");
+      db.pragma("legacy_alter_table = OFF");
 
       // Создаем новую таблицу с обновленным CHECK constraint
       db.exec(`

@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logActivity } from "@/lib/activity";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
+import { QTY_EPS, roundQty, sameQty } from "@/lib/quantity";
+import { getCashBalance } from "@/lib/balance";
 
 initDatabase();
 
@@ -7,12 +11,15 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const body = await request.json();
     const { cost, value } = body;
     const orderId = parseInt(params.id);
 
-    if (!cost || cost <= 0) {
+    if (!(Number.isFinite(cost) && cost > 0)) {
       return NextResponse.json(
         { error: "Стоимость таможенного сбора должна быть больше 0" },
         { status: 400 }
@@ -30,32 +37,28 @@ export async function POST(
       );
     }
 
-    // Если указан объем, проверяем его
-    const customsValue = value || order.value;
-    if (customsValue > order.value) {
+    // Если указан объем, проверяем его: отрицательный или нулевой объем
+    // создал бы «лишний» товар на складе
+    if (
+      value !== undefined &&
+      value !== null &&
+      !(typeof value === "number" && Number.isFinite(value) && value > 0)
+    ) {
+      return NextResponse.json(
+        { error: "Объем таможенного оформления должен быть больше 0" },
+        { status: 400 }
+      );
+    }
+    const customsValue: number = value ?? order.value;
+    if (customsValue > order.value + QTY_EPS) {
       return NextResponse.json(
         { error: "Объем таможенного оформления не может превышать объем заказа" },
         { status: 400 }
       );
     }
 
-    // Проверяем баланс
-    const loansResult = db
-      .prepare("SELECT SUM(amount) as total FROM loans WHERE is_paid = false")
-      .get() as { total: number | null };
-    const totalLoans = loansResult.total || 0;
-
-    const expensesResult = db
-      .prepare("SELECT SUM(amount) as total FROM expenses WHERE amount > 0")
-      .get() as { total: number | null };
-    const totalExpenses = expensesResult.total || 0;
-
-    const incomeResult = db
-      .prepare("SELECT SUM(ABS(amount)) as total FROM expenses WHERE amount < 0")
-      .get() as { total: number | null };
-    const totalIncome = incomeResult.total || 0;
-
-    const currentBalance = totalLoans + totalIncome - totalExpenses;
+    // Баланс кассы без долга менеджеров (см. lib/balance.ts)
+    const currentBalance = getCashBalance();
 
     if (cost > currentBalance) {
       return NextResponse.json(
@@ -81,7 +84,7 @@ export async function POST(
         orderId
       );
 
-      if (customsValue === order.value) {
+      if (sameQty(customsValue, order.value)) {
         // Полная оплата таможни - обновляем весь заказ
         const update = db.prepare(`
           UPDATE orders 
@@ -93,16 +96,10 @@ export async function POST(
         update.run(cost, cost, orderId);
 
         // Логируем активность
-        const insertLog = db.prepare(`
-          INSERT INTO activity_logs (user_id, action, entity_type, details)
-          VALUES (1, 'оплата_таможни_полная', 'order', ?)
-        `);
-        insertLog.run(
-          `Заказ ${order.order_number}: полная оплата таможни $${cost} для ${customsValue} ${order.measurement}`
-        );
+        logActivity(session.userId, "оплата_таможни_полная", "order", `Заказ ${order.order_number}: полная оплата таможни $${cost} для ${customsValue} ${order.measurement}`);
       } else {
         // Частичная оплата - разделяем заказ
-        const remainingValue = order.value - customsValue;
+        const remainingValue = roundQty(order.value - customsValue);
         const pricePerUnit = order.total_price / order.value;
         
         // Создаем новый заказ для оплаченной части (на складе)
@@ -143,13 +140,7 @@ export async function POST(
         updateOriginalOrder.run(remainingValue, remainingPrice, orderId);
 
         // Логируем активность
-        const insertLog = db.prepare(`
-          INSERT INTO activity_logs (user_id, action, entity_type, details)
-          VALUES (1, 'оплата_таможни_частичная', 'order', ?)
-        `);
-        insertLog.run(
-          `Заказ ${order.order_number}: частичная оплата таможни $${cost} для ${customsValue} ${order.measurement}. Создан новый заказ ${newOrderNumber} (на складе). Остаток: ${remainingValue} ${order.measurement}`
-        );
+        logActivity(session.userId, "оплата_таможни_частичная", "order", `Заказ ${order.order_number}: частичная оплата таможни $${cost} для ${customsValue} ${order.measurement}. Создан новый заказ ${newOrderNumber} (на складе). Остаток: ${remainingValue} ${order.measurement}`);
       }
     });
 

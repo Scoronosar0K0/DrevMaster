@@ -1,26 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getJwtSecret } from "@/lib/auth";
+import { logActivity } from "@/lib/activity";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
-import { jwtVerify } from "jose";
+import { payDownLoans } from "@/lib/balance";
 
 initDatabase();
 
 export async function POST(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
-    // Получаем токен из cookie
-    const token = request.cookies.get("auth-token")?.value;
-
-    if (!token) {
-      return NextResponse.json(
-        { error: "Токен авторизации не найден" },
-        { status: 401 }
-      );
-    }
-
-    // Декодируем токен
-    const { payload } = await jwtVerify(token, getJwtSecret());
-    const userId = payload.userId as number;
-    const userRole = payload.role as string;
+    const userId = session.userId;
+    const userRole = session.role;
 
     if (userRole !== "admin") {
       return NextResponse.json(
@@ -39,16 +31,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Проверяем, что менеджер существует
+    // Проверяем, что менеджер существует. Деактивированный менеджер тоже
+    // подходит: его долг все равно нужно собрать
     const manager = db
-      .prepare(
-        "SELECT * FROM users WHERE id = ? AND role = 'manager' AND is_active = true"
-      )
+      .prepare("SELECT * FROM users WHERE id = ? AND role = 'manager'")
       .get(manager_id) as any;
 
     if (!manager) {
       return NextResponse.json(
-        { error: "Менеджер не найден или неактивен" },
+        { error: "Менеджер не найден" },
         { status: 404 }
       );
     }
@@ -69,66 +60,13 @@ export async function POST(request: NextRequest) {
         userId // администратор сам одобрил
       );
 
-      // Находим партнера менеджера для уменьшения его займа
-      const managerPartner = db
-        .prepare("SELECT id FROM partners WHERE user_id = ?")
-        .get(manager_id) as any;
-
-      if (managerPartner) {
-        // Ищем активные займы менеджера для уменьшения
-        const managerLoans = db
-          .prepare(
-            `
-            SELECT * FROM loans 
-            WHERE partner_id = ? AND is_paid = false 
-            ORDER BY created_at ASC
-          `
-          )
-          .all(managerPartner.id) as any[];
-
-        let remainingAmount = amount;
-
-        // Уменьшаем займы менеджера на сумму взятых денег
-        for (const loan of managerLoans) {
-          if (remainingAmount <= 0) break;
-
-          if (loan.amount <= remainingAmount) {
-            // Полностью погашаем этот займ
-            db.prepare("UPDATE loans SET is_paid = true WHERE id = ?").run(
-              loan.id
-            );
-            remainingAmount -= loan.amount;
-
-            // Логируем погашение займа
-            const insertPaymentLog = db.prepare(`
-              INSERT INTO activity_logs (user_id, action, entity_type, details)
-              VALUES (?, 'займ_погашен_админом', 'loan', ?)
-            `);
-            insertPaymentLog.run(
-              userId,
-              `Займ менеджера ${manager.name} на сумму $${loan.amount} погашен администратором`
-            );
-          } else {
-            // Частично погашаем займ
-            const newAmount = loan.amount - remainingAmount;
-            db.prepare("UPDATE loans SET amount = ? WHERE id = ?").run(
-              newAmount,
-              loan.id
-            );
-
-            // Логируем частичное погашение
-            const insertPaymentLog = db.prepare(`
-              INSERT INTO activity_logs (user_id, action, entity_type, details)
-              VALUES (?, 'займ_частично_погашен_админом', 'loan', ?)
-            `);
-            insertPaymentLog.run(
-              userId,
-              `Займ менеджера ${manager.name} частично погашен администратором на сумму $${remainingAmount}. Остаток: $${newAmount}`
-            );
-            remainingAmount = 0;
-          }
+      // Гасим долги менеджера за товар, начиная с самых старых (в центах)
+      for (const step of payDownLoans(manager_id, "manager_debt", amount)) {
+        if (step.remaining === 0) {
+          logActivity(session.userId, "займ_погашен_админом", "loan", `Займ менеджера ${manager.name} на сумму $${step.paid} погашен администратором`);
+        } else {
+          logActivity(session.userId, "займ_частично_погашен_админом", "loan", `Займ менеджера ${manager.name} частично погашен администратором на сумму $${step.paid}. Остаток: $${step.remaining}`);
         }
-
       }
 
       // Полученные деньги — доход кассы (как при одобрении перевода менеджера).
@@ -145,16 +83,9 @@ export async function POST(request: NextRequest) {
       );
 
       // Логируем активность взятия денег
-      const insertLog = db.prepare(`
-        INSERT INTO activity_logs (user_id, action, entity_type, details)
-        VALUES (?, 'взятие_денег_у_менеджера', 'manager', ?)
-      `);
-      insertLog.run(
-        userId,
-        `Администратор взял $${amount} у менеджера ${manager.name}. ${
+      logActivity(session.userId, "взятие_денег_у_менеджера", "manager", `Администратор взял $${amount} у менеджера ${manager.name}. ${
           description || ""
-        }`
-      );
+        }`);
     });
 
     transaction();

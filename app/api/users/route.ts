@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
 const bcrypt = require("bcryptjs");
 
 initDatabase();
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const users = db
       .prepare(
@@ -27,6 +31,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const body = await request.json();
     const { username, password, role, name, email, phone } = body;

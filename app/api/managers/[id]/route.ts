@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logActivity } from "@/lib/activity";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase, deleteUserIfNoHistory } from "@/lib/database";
 const bcrypt = require("bcryptjs");
 
@@ -8,6 +10,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const managerId = parseInt(params.id);
 
@@ -49,6 +54,9 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const managerId = parseInt(params.id);
     const body = await request.json();
@@ -83,18 +91,23 @@ export async function PUT(
       );
     }
 
-    // Обновляем менеджера
+    // Обновляем менеджера. Статус меняем, только если он явно передан:
+    // форма редактирования его не отправляет, и раньше сохранение формы
+    // молча активировало деактивированного менеджера
     let updateQuery = `
       UPDATE users 
-      SET username = ?, name = ?, email = ?, phone = ?, is_active = ?
+      SET username = ?, name = ?, email = ?, phone = ?
     `;
-    let queryParams = [
+    let queryParams: (string | number | null)[] = [
       username,
       name,
       email || null,
       phone || null,
-      is_active !== false ? 1 : 0,
     ];
+    if (typeof is_active === "boolean") {
+      updateQuery += `, is_active = ?`;
+      queryParams.push(is_active ? 1 : 0);
+    }
 
     // Если предоставлен новый пароль, обновляем его
     if (password) {
@@ -109,11 +122,7 @@ export async function PUT(
     db.prepare(updateQuery).run(...queryParams);
 
     // Логируем активность
-    const insertLog = db.prepare(`
-      INSERT INTO activity_logs (user_id, action, entity_type, details)
-      VALUES (1, 'обновлен', 'manager', ?)
-    `);
-    insertLog.run(`Обновлен менеджер: ${name} (${username})`);
+    logActivity(session.userId, "обновлен", "manager", `Обновлен менеджер: ${name} (${username})`);
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -129,6 +138,9 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const managerId = parseInt(params.id);
 
@@ -157,11 +169,7 @@ export async function DELETE(
     }
 
     // Логируем активность
-    const insertLog = db.prepare(`
-      INSERT INTO activity_logs (user_id, action, entity_type, details)
-      VALUES (1, 'удален', 'manager', ?)
-    `);
-    insertLog.run(`Удален менеджер: ${manager.name} (${manager.username})`);
+    logActivity(session.userId, "удален", "manager", `Удален менеджер: ${manager.name} (${manager.username})`);
 
     return NextResponse.json({ success: true });
   } catch (error) {

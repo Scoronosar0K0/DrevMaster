@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logActivity } from "@/lib/activity";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
 
 initDatabase();
 
 export async function POST(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const body = await request.json();
     const { order_id, amount, description } = body;
@@ -45,13 +50,7 @@ export async function POST(request: NextRequest) {
       updateOrder.run(amount, order_id);
 
       // Логируем активность
-      const insertLog = db.prepare(`
-        INSERT INTO activity_logs (user_id, action, entity_type, details)
-        VALUES (1, 'увеличение_цены_заказа', 'order', ?)
-      `);
-      insertLog.run(
-        `Добавлен операционный расход $${amount} к заказу ${order.order_number}${description ? `: ${description}` : ''}`
-      );
+      logActivity(session.userId, "увеличение_цены_заказа", "order", `Добавлен операционный расход $${amount} к заказу ${order.order_number}${description ? `: ${description}` : ''}`);
     });
 
     transaction();

@@ -40,11 +40,13 @@ function isApiAllowed(pathname: string, method: string, role: string) {
     );
   }
 
-  // Прочие роли: всё, кроме административных разделов
+  // Прочие роли: всё, кроме административных разделов и разделов менеджера
   if (
     under(pathname, "/api/admin") ||
     under(pathname, "/api/analytics") ||
-    under(pathname, "/api/users")
+    under(pathname, "/api/users") ||
+    under(pathname, "/api/manager") ||
+    under(pathname, "/api/manager-transfers")
   ) {
     return false;
   }

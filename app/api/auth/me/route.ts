@@ -1,33 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionUser } from "@/lib/auth";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
 
 initDatabase();
 
 export async function GET(request: NextRequest) {
+  // 401, если пользователь удален, деактивирован или сменил роль —
+  // клиент по этому ответу завершает сессию
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
-    const session = await getSessionUser(request);
-
-    if (!session) {
-      return NextResponse.json(
-        { error: "Недействительный токен" },
-        { status: 401 }
-      );
-    }
-
     // Имя и контакты берем из базы: в токене их нет, и они могут меняться
     const user = db
       .prepare(
         "SELECT id, username, name, email, phone, role FROM users WHERE id = ?"
       )
       .get(session.userId) as any;
-
-    if (!user) {
-      return NextResponse.json(
-        { error: "Пользователь не найден" },
-        { status: 401 }
-      );
-    }
 
     return NextResponse.json({
       success: true,
@@ -42,10 +31,10 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Ошибка проверки токена:", error);
+    console.error("Ошибка получения пользователя:", error);
     return NextResponse.json(
-      { error: "Недействительный токен" },
-      { status: 401 }
+      { error: "Ошибка получения пользователя" },
+      { status: 500 }
     );
   }
 }

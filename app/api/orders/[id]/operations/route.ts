@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
 
 initDatabase();
@@ -7,6 +8,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const orderId = parseInt(params.id);
 
@@ -42,6 +46,20 @@ export async function GET(
       `
       )
       .all(`%${order.order_number}%`, `%${order.order_number}%`) as any[];
+
+    // LIKE — только грубый отбор: номер «A-1» входит и в «A-12», и в
+    // дочерние «A-1-C…». Оставляем записи, где номер стоит отдельным словом
+    // после «заказ/заказа/заказу» (так пишут все маршруты заказов)
+    const escapeRe = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const orderRe = new RegExp(
+      "(?:^|[\\s(])заказ[ау]?\\s" +
+        escapeRe(order.order_number) +
+        "(?=$|[\\s:,)]|\\.(?:\\s|$))",
+      "i"
+    );
+    const orderLogs = activityLogs.filter(
+      (log) => log.details && orderRe.test(log.details)
+    );
 
     // Получаем расходы связанные с заказом
     const expenses = db
@@ -113,7 +131,7 @@ export async function GET(
 
     // Объединяем все операции
     const allOperations = [
-      ...activityLogs,
+      ...orderLogs,
       ...expenses,
       ...transportationExpenses,
       ...customsExpenses,

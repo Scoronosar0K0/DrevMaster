@@ -1,16 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logActivity } from "@/lib/activity";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
 
 initDatabase();
 
 export async function POST(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const body = await request.json();
     const { amount, description, link_to_order, order_id } = body;
 
-    if (!amount || amount <= 0) {
+    if (!(Number.isFinite(amount) && amount > 0)) {
       return NextResponse.json(
         { error: "Сумма расхода должна быть больше 0" },
+        { status: 400 }
+      );
+    }
+
+    // Отмечено «Связать с заказом», но заказ не выбран — иначе расход молча
+    // сохранился бы без привязки к заказу
+    if (link_to_order && !order_id) {
+      return NextResponse.json(
+        { error: "Выберите заказ для привязки расхода" },
         { status: 400 }
       );
     }
@@ -48,17 +62,11 @@ export async function POST(request: NextRequest) {
         updateOrder.run(amount, order_id);
 
         // Логируем увеличение цены заказа
-        const insertOrderLog = db.prepare(`
-          INSERT INTO activity_logs (user_id, action, entity_type, details)
-          VALUES (1, 'увеличение_цены_заказа', 'order', ?)
-        `);
-        insertOrderLog.run(
-          `Заказ ${
+        logActivity(session.userId, "увеличение_цены_заказа", "order", `Заказ ${
             order.order_number
           }: увеличение цены на $${amount} из-за дополнительного расхода. Новая цена: $${(
             order.total_price + amount
-          ).toFixed(2)}`
-        );
+          ).toFixed(2)}`);
       }
 
       insertExpense.run(
@@ -69,10 +77,6 @@ export async function POST(request: NextRequest) {
       );
 
       // Логируем создание расхода
-      const insertLog = db.prepare(`
-        INSERT INTO activity_logs (user_id, action, entity_type, details)
-        VALUES (1, 'создание_расхода', 'expense', ?)
-      `);
       const logDescription =
         link_to_order && order_id
           ? `Создан расход на сумму $${amount}, связанный с заказом ID: ${order_id}. ${
@@ -80,7 +84,7 @@ export async function POST(request: NextRequest) {
             }`
           : `Создан расход на сумму $${amount}. ${description || ""}`;
 
-      insertLog.run(logDescription);
+      logActivity(session.userId, "создание_расхода", "expense", logDescription);
     });
 
     transaction();

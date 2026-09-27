@@ -1,26 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getJwtSecret } from "@/lib/auth";
-import { jwtVerify } from "jose";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
 
 initDatabase();
 
 export async function GET(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
-    // Получаем токен из cookie
-    const token = request.cookies.get("auth-token")?.value;
-
-    if (!token) {
-      return NextResponse.json(
-        { error: "Токен авторизации не найден" },
-        { status: 401 }
-      );
-    }
-
-    // Декодируем токен
-    const { payload } = await jwtVerify(token, getJwtSecret());
-    const userId = payload.userId as number;
-    const userRole = payload.role as string;
+    const userId = session.userId;
+    const userRole = session.role;
 
     if (userRole !== "manager") {
       return NextResponse.json(
@@ -29,21 +19,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Получаем ID партнера для этого менеджера
-    const partnerResult = db
-      .prepare("SELECT id FROM partners WHERE user_id = ?")
-      .get(userId) as { id: number } | undefined;
-
-    if (!partnerResult) {
-      return NextResponse.json(
-        { error: "Партнер не найден для этого менеджера" },
-        { status: 404 }
-      );
-    }
-
-    const partnerId = partnerResult.id;
-
-    // Получаем все займы менеджера с информацией о заказах
+    // Долги менеджера за товар (хранятся на его партнерской записи)
     const loans = db
       .prepare(
         `
@@ -51,22 +27,27 @@ export async function GET(request: NextRequest) {
           l.*,
           o.order_number
         FROM loans l
+        JOIN partners p ON l.partner_id = p.id
         LEFT JOIN orders o ON l.order_id = o.id
-        WHERE l.partner_id = ?
+        WHERE p.user_id = ? AND l.kind = 'manager_debt'
         ORDER BY l.created_at DESC
       `
       )
-      .all(partnerId);
+      .all(userId) as any[];
 
-    // Вычисляем сводную информацию
-    const totalLoans = loans.reduce(
-      (sum: number, loan: any) => sum + loan.amount,
-      0
-    );
-    const totalPaid = loans
-      .filter((loan: any) => loan.is_paid)
-      .reduce((sum: number, loan: any) => sum + loan.amount, 0);
-    const currentDebt = totalLoans - totalPaid;
+    // Сводка. Сумма займа уменьшается при частичной оплате, поэтому «всего»
+    // считаем по стоимости полученного товара (продажи этому менеджеру),
+    // а «выплачено» — как разницу с текущим долгом
+    const received = db
+      .prepare(
+        "SELECT COALESCE(SUM(sale_price), 0) as total FROM sales WHERE manager_id = ?"
+      )
+      .get(userId) as { total: number };
+    const currentDebt = loans
+      .filter((loan) => !loan.is_paid)
+      .reduce((sum, loan) => sum + loan.amount, 0);
+    const totalLoans = Math.max(received.total, currentDebt);
+    const totalPaid = Math.round((totalLoans - currentDebt) * 100) / 100;
 
     return NextResponse.json({
       loans,

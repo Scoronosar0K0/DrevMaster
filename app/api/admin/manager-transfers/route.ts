@@ -1,25 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getJwtSecret } from "@/lib/auth";
-import { jwtVerify } from "jose";
+import { logActivity } from "@/lib/activity";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
+import { getOutstandingFor, payDownLoans } from "@/lib/balance";
+import { formatMoney } from "@/lib/format";
 
 initDatabase();
 
+// Ошибка проверки при одобрении: откатывает транзакцию и возвращается как 400
+class ApprovalError extends Error {}
+
 export async function GET(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
-    // Получаем токен из cookie
-    const token = request.cookies.get("auth-token")?.value;
-
-    if (!token) {
-      return NextResponse.json(
-        { error: "Токен авторизации не найден" },
-        { status: 401 }
-      );
-    }
-
-    // Декодируем токен
-    const { payload } = await jwtVerify(token, getJwtSecret());
-    const userRole = payload.role as string;
+    const userRole = session.role;
 
     if (userRole !== "admin") {
       return NextResponse.json(
@@ -68,21 +64,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
-    // Получаем токен из cookie
-    const token = request.cookies.get("auth-token")?.value;
-
-    if (!token) {
-      return NextResponse.json(
-        { error: "Токен авторизации не найден" },
-        { status: 401 }
-      );
-    }
-
-    // Декодируем токен
-    const { payload } = await jwtVerify(token, getJwtSecret());
-    const userId = payload.userId as number;
-    const userRole = payload.role as string;
+    const userId = session.userId;
+    const userRole = session.role;
 
     if (userRole !== "admin") {
       return NextResponse.json(
@@ -115,61 +102,43 @@ export async function PATCH(request: NextRequest) {
 
       // Если перевод одобрен, уменьшаем долг менеджера
       if (status === "approved") {
-        // Получаем данные перевода с именем менеджера
         const transfer = db
           .prepare(`
-            SELECT t.*, u.name as manager_name 
+            SELECT t.*, u.name as manager_name, r.role as recipient_role, r.name as recipient_name
             FROM manager_transfers t
             JOIN users u ON t.from_manager_id = u.id
+            JOIN users r ON t.to_user_id = r.id
             WHERE t.id = ?
           `)
           .get(id) as any;
 
         if (transfer) {
-          // Находим партнера менеджера
-          const managerPartner = db
-            .prepare("SELECT id FROM partners WHERE user_id = ?")
-            .get(transfer.from_manager_id) as any;
-
-          if (managerPartner) {
-            // Ищем активные займы менеджера для уменьшения
-            const managerLoans = db
-              .prepare(
-                `SELECT * FROM loans 
-                 WHERE partner_id = ? AND is_paid = false 
-                 ORDER BY created_at ASC`
-              )
-              .all(managerPartner.id) as any[];
-
-            let remainingAmount = transfer.amount;
-
-            // Уменьшаем займы менеджера на сумму перевода
-            for (const loan of managerLoans) {
-              if (remainingAmount <= 0) break;
-
-              if (loan.amount <= remainingAmount) {
-                // Полностью погашаем этот займ
-                db.prepare("UPDATE loans SET is_paid = true WHERE id = ?").run(loan.id);
-                remainingAmount -= loan.amount;
-              } else {
-                // Частично уменьшаем займ
-                db.prepare("UPDATE loans SET amount = amount - ? WHERE id = ?").run(
-                  remainingAmount,
-                  loan.id
-                );
-                remainingAmount = 0;
-              }
+          if (transfer.recipient_role === "partner") {
+            // Менеджер заплатил партнеру от имени компании: уменьшаем и долг
+            // менеджера, и наш займ у партнера. Касса при этом не меняется:
+            // займ партнера выходит из баланса, поступление ниже его компенсирует
+            const partnerOwed = getOutstandingFor(transfer.to_user_id, "partner_loan");
+            if (partnerOwed + 0.005 < transfer.amount) {
+              throw new ApprovalError(
+                `У партнера ${transfer.recipient_name} непогашенных займов только на ${formatMoney(
+                  partnerOwed
+                )}. Отклоните перевод или уточните сумму`
+              );
             }
+            payDownLoans(transfer.to_user_id, "partner_loan", transfer.amount);
           }
 
-          // Добавляем доход админу от принятого перевода
-          const insertIncome = db.prepare(`
-            INSERT INTO expenses (amount, description, type, related_id, created_at)
-            VALUES (?, ?, 'other', ?, datetime('now'))
-          `);
-          insertIncome.run(
+          payDownLoans(transfer.from_manager_id, "manager_debt", transfer.amount);
+
+          // Деньги от менеджера — поступление в кассу
+          db.prepare(`
+            INSERT INTO expenses (amount, description, type, related_id)
+            VALUES (?, ?, 'other', ?)
+          `).run(
             -transfer.amount, // Отрицательная сумма = доход
-            `Получен перевод от менеджера ${transfer.manager_name} - $${transfer.amount}`,
+            transfer.recipient_role === "partner"
+              ? `Перевод менеджера ${transfer.manager_name} партнеру ${transfer.recipient_name} в счет займа - $${transfer.amount}`
+              : `Получен перевод от менеджера ${transfer.manager_name} - $${transfer.amount}`,
             transfer.id
           );
         }
@@ -177,7 +146,17 @@ export async function PATCH(request: NextRequest) {
       return true;
     });
 
-    if (!applyDecision()) {
+    let decided: boolean;
+    try {
+      decided = applyDecision();
+    } catch (error) {
+      if (error instanceof ApprovalError) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+      throw error;
+    }
+
+    if (!decided) {
       return NextResponse.json(
         { error: "Перевод не найден или уже обработан" },
         { status: 404 }
@@ -196,16 +175,9 @@ export async function PATCH(request: NextRequest) {
       )
       .get(id) as any;
 
-    const insertLog = db.prepare(`
-      INSERT INTO activity_logs (user_id, action, entity_type, details)
-      VALUES (?, 'обработка_перевода', 'transfer', ?)
-    `);
-    insertLog.run(
-      userId,
-      `${status === "approved" ? "Одобрен" : "Отклонен"} перевод от ${
+    logActivity(session.userId, "обработка_перевода", "transfer", `${status === "approved" ? "Одобрен" : "Отклонен"} перевод от ${
         transfer.manager_name
-      } на сумму $${transfer.amount}`
-    );
+      } на сумму $${transfer.amount}`);
 
     return NextResponse.json({ success: true });
   } catch (error) {

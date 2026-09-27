@@ -1,19 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logActivity } from "@/lib/activity";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase, deleteUserIfNoHistory } from "@/lib/database";
 
 initDatabase();
+
+// Изменять и удалять можно только настоящих партнеров: не служебную запись
+// администратора (id 0) и не партнерские записи менеджеров — иначе через этот
+// маршрут можно было бы сменить логин и пароль администратора или менеджера
+function findPartner(partnerId: number) {
+  return db
+    .prepare(
+      `SELECT p.id, p.user_id, u.name FROM partners p
+       JOIN users u ON u.id = p.user_id
+       WHERE p.id = ? AND p.id <> 0 AND u.role = 'partner'`
+    )
+    .get(partnerId) as { id: number; user_id: number; name: string } | undefined;
+}
+
+// Партнеров изменяют администратор и сотрудники (роль user), но не сами партнеры
+function canManagePartners(role: string) {
+  return role === "admin" || role === "user";
+}
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
+  if (!canManagePartners(session.role)) {
+    return NextResponse.json({ error: "Доступ запрещен" }, { status: 403 });
+  }
+
   try {
     const partnerId = parseInt(params.id);
 
     // Проверяем, что партнер существует
-    const partner = db
-      .prepare("SELECT id, name, user_id FROM partners WHERE id = ?")
-      .get(partnerId) as any;
+    const partner = findPartner(partnerId);
 
     if (!partner) {
       return NextResponse.json(
@@ -45,11 +70,7 @@ export async function DELETE(
 
     // Логируем активность
     try {
-      const insertLog = db.prepare(`
-        INSERT INTO activity_logs (user_id, action, entity_type, details)
-        VALUES (1, 'удален', 'partner', ?)
-      `);
-      insertLog.run(`Удален партнер: ${partner.name}`);
+      logActivity(session.userId, "удален", "partner", `Удален партнер: ${partner.name}`);
     } catch (logError) {
       console.error("Ошибка логирования:", logError);
     }
@@ -68,6 +89,13 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
+  if (!canManagePartners(session.role)) {
+    return NextResponse.json({ error: "Доступ запрещен" }, { status: 403 });
+  }
+
   try {
     const partnerId = parseInt(params.id);
     const body = await request.json();
@@ -81,14 +109,26 @@ export async function PUT(
     }
 
     // Проверяем, что партнер существует
-    const existingPartner = db
-      .prepare("SELECT id, user_id FROM partners WHERE id = ?")
-      .get(partnerId) as any;
+    const existingPartner = findPartner(partnerId);
 
     if (!existingPartner) {
       return NextResponse.json(
         { error: "Партнер не найден" },
         { status: 404 }
+      );
+    }
+
+    // Логин и пароль партнера меняет только администратор
+    const currentLogin = db
+      .prepare("SELECT username FROM users WHERE id = ?")
+      .get(existingPartner.user_id) as { username: string };
+    if (
+      session.role !== "admin" &&
+      (password || username !== currentLogin.username)
+    ) {
+      return NextResponse.json(
+        { error: "Логин и пароль партнера может менять только администратор" },
+        { status: 403 }
       );
     }
 
@@ -135,11 +175,7 @@ export async function PUT(
 
       // Логируем активность
       try {
-        const insertLog = db.prepare(`
-          INSERT INTO activity_logs (user_id, action, entity_type, details)
-          VALUES (1, 'обновлен', 'partner', ?)
-        `);
-        insertLog.run(`Обновлен партнер: ${name}`);
+        logActivity(session.userId, "обновлен", "partner", `Обновлен партнер: ${name}`);
       } catch (logError) {
         console.error("Ошибка логирования:", logError);
       }

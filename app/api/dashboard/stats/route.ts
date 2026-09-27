@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
+import { getCashBalance, getOutstandingLoans } from "@/lib/balance";
 
 // Инициализируем базу данных при первом запросе
 initDatabase();
@@ -8,6 +10,9 @@ initDatabase();
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     // Убедимся, что таблицы существуют, если нет - возвращаем нули
     let totalOrders = 0;
@@ -34,23 +39,8 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-      // Правильный расчет баланса: займы + доходы - расходы
-      const activeLoansResult = db
-        .prepare("SELECT SUM(amount) as total FROM loans WHERE is_paid = false")
-        .get() as { total: number | null };
-      const activeLoans = activeLoansResult.total || 0;
-
-      const expensesResult = db
-        .prepare("SELECT SUM(amount) as total FROM expenses WHERE amount > 0")
-        .get() as { total: number | null };
-      const totalExpenses = expensesResult.total || 0;
-
-      const incomeResult = db
-        .prepare("SELECT SUM(ABS(amount)) as total FROM expenses WHERE amount < 0")
-        .get() as { total: number | null };
-      const totalIncome = incomeResult.total || 0;
-
-      totalBalance = activeLoans + totalIncome - totalExpenses;
+      // Баланс кассы без долга менеджеров (см. lib/balance.ts)
+      totalBalance = getCashBalance();
     } catch (e) {
       console.log("Таблица loans или expenses еще не создана");
     }
@@ -77,24 +67,12 @@ export async function GET(request: NextRequest) {
       console.log("Таблица orders еще не создана");
     }
 
-    // Непогашенные займы раздельно: деньги, взятые у партнеров (мы должны),
-    // и долг менеджеров за товар (должны нам)
+    // Непогашенные займы раздельно: деньги, взятые у партнеров и
+    // администратора (мы должны), и долг менеджеров за товар (должны нам)
     let partnerLoans = 0;
     let managerDebt = 0;
     try {
-      const loanTotals = db
-        .prepare(
-          `SELECT
-             COALESCE(SUM(CASE WHEN u.role = 'manager' THEN 0 ELSE l.amount END), 0) as partner_loans,
-             COALESCE(SUM(CASE WHEN u.role = 'manager' THEN l.amount ELSE 0 END), 0) as manager_debt
-           FROM loans l
-           LEFT JOIN partners p ON l.partner_id = p.id
-           LEFT JOIN users u ON p.user_id = u.id
-           WHERE l.is_paid = false`
-        )
-        .get() as { partner_loans: number; manager_debt: number };
-      partnerLoans = loanTotals.partner_loans;
-      managerDebt = loanTotals.manager_debt;
+      ({ partnerLoans, managerDebt } = getOutstandingLoans());
     } catch (e) {
       console.log("Таблица loans еще не создана");
     }

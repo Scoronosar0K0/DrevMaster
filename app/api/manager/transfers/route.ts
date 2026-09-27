@@ -1,26 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getJwtSecret } from "@/lib/auth";
-import { jwtVerify } from "jose";
+import { logActivity } from "@/lib/activity";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
 
 initDatabase();
 
 export async function GET(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
-    // Получаем токен из cookie
-    const token = request.cookies.get("auth-token")?.value;
-
-    if (!token) {
-      return NextResponse.json(
-        { error: "Токен авторизации не найден" },
-        { status: 401 }
-      );
-    }
-
-    // Декодируем токен
-    const { payload } = await jwtVerify(token, getJwtSecret());
-    const userId = payload.userId as number;
-    const userRole = payload.role as string;
+    const userId = session.userId;
+    const userRole = session.role;
 
     if (userRole !== "manager") {
       return NextResponse.json(
@@ -59,21 +50,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
-    // Получаем токен из cookie
-    const token = request.cookies.get("auth-token")?.value;
-
-    if (!token) {
-      return NextResponse.json(
-        { error: "Токен авторизации не найден" },
-        { status: 401 }
-      );
-    }
-
-    // Декодируем токен
-    const { payload } = await jwtVerify(token, getJwtSecret());
-    const userId = payload.userId as number;
-    const userRole = payload.role as string;
+    const userId = session.userId;
+    const userRole = session.role;
 
     if (userRole !== "manager") {
       return NextResponse.json(
@@ -85,16 +67,19 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { to_user_id, amount, description } = body;
 
-    if (!to_user_id || !amount || amount <= 0) {
+    if (!to_user_id || !(Number.isFinite(amount) && amount > 0)) {
       return NextResponse.json(
         { error: "Получатель и сумма обязательны" },
         { status: 400 }
       );
     }
 
-    // Проверяем, что получатель существует
+    // Получатель — администратор (деньги в кассу) или активный партнер
+    // (менеджер заплатил партнеру в счет его займа)
     const recipient = db
-      .prepare("SELECT id, name FROM users WHERE id = ?")
+      .prepare(
+        "SELECT id, name FROM users WHERE id = ? AND is_active = true AND role IN ('admin', 'partner')"
+      )
       .get(to_user_id);
     if (!recipient) {
       return NextResponse.json(
@@ -117,16 +102,9 @@ export async function POST(request: NextRequest) {
     );
 
     // Логируем активность
-    const insertLog = db.prepare(`
-      INSERT INTO activity_logs (user_id, action, entity_type, details)
-      VALUES (?, 'заявка_на_перевод', 'transfer', ?)
-    `);
-    insertLog.run(
-      userId,
-      `Создана заявка на перевод $${amount} пользователю ${
+    logActivity(session.userId, "заявка_на_перевод", "transfer", `Создана заявка на перевод $${amount} пользователю ${
         (recipient as any).name
-      }`
-    );
+      }`);
 
     return NextResponse.json({
       success: true,

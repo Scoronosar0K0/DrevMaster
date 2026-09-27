@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logActivity } from "@/lib/activity";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
 
 initDatabase();
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const loans = db
       .prepare(
@@ -21,8 +26,13 @@ export async function GET() {
           WHEN l.partner_id = 0 THEN 'Администратор'
           ELSE u.name 
         END as partner_name,
+        l.kind,
         -- manager: долг менеджера нам; иначе займ, который мы должны вернуть
-        CASE WHEN l.partner_id = 0 THEN 'admin' ELSE u.role END as partner_role,
+        CASE
+          WHEN l.kind = 'manager_debt' THEN 'manager'
+          WHEN l.partner_id = 0 THEN 'admin'
+          ELSE u.role
+        END as partner_role,
         o.order_number
       FROM loans l
       LEFT JOIN partners p ON l.partner_id = p.id AND l.partner_id != 0
@@ -44,14 +54,25 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const body = await request.json();
     const { partner_id, amount, description, loan_date, from_admin } = body;
 
-    if (!amount || amount <= 0) {
+    if (!(Number.isFinite(amount) && amount > 0)) {
       return NextResponse.json(
         { error: "Сумма обязательна и должна быть больше 0" },
         { status: 400 }
+      );
+    }
+
+    // Собственные деньги в кассу вносит только администратор
+    if (from_admin && session.role !== "admin") {
+      return NextResponse.json(
+        { error: "Займ от администратора может оформить только администратор" },
+        { status: 403 }
       );
     }
 
@@ -67,9 +88,12 @@ export async function POST(request: NextRequest) {
     if (from_admin) {
       finalPartnerId = 0; // Специальный ID для админа
     } else {
-      // Проверяем, что партнер существует
+      // Проверяем, что это настоящий партнер (не служебная запись и не менеджер)
       const partner = db
-        .prepare("SELECT id FROM partners WHERE id = ?")
+        .prepare(
+          `SELECT p.id FROM partners p JOIN users u ON u.id = p.user_id
+           WHERE p.id = ? AND p.id != 0 AND u.role = 'partner' AND u.is_active = true`
+        )
         .get(partner_id);
       if (!partner) {
         return NextResponse.json(
@@ -97,8 +121,8 @@ export async function POST(request: NextRequest) {
 
       // Создаем займ
       const insertLoan = db.prepare(`
-        INSERT INTO loans (partner_id, amount, loan_date, description, is_paid)
-        VALUES (?, ?, ?, ?, false)
+        INSERT INTO loans (partner_id, amount, loan_date, description, is_paid, kind)
+        VALUES (?, ?, ?, ?, false, 'partner_loan')
       `);
       insertLoan.run(
         finalPartnerId,
@@ -108,18 +132,12 @@ export async function POST(request: NextRequest) {
       );
 
       // Логируем активность
-      const insertLog = db.prepare(`
-        INSERT INTO activity_logs (user_id, action, entity_type, details)
-        VALUES (1, 'займ_взят', 'loan', ?)
-      `);
       const loanSource = from_admin
         ? "администратора"
         : `партнера ID: ${partner_id}`;
-      insertLog.run(
-        `Займ на сумму $${amount} от ${loanSource}${
+      logActivity(session.userId, "займ_взят", "loan", `Займ на сумму $${amount} от ${loanSource}${
           description ? ` (${description})` : ""
-        }`
-      );
+        }`);
     });
 
     transaction();

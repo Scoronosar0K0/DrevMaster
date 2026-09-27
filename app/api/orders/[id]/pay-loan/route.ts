@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logActivity } from "@/lib/activity";
+import { requireActiveSession } from "@/lib/session";
 import { db, initDatabase } from "@/lib/database";
+import { getCashBalance } from "@/lib/balance";
+import { roundQty } from "@/lib/quantity";
 
 initDatabase();
 
@@ -7,6 +11,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = await requireActiveSession(request);
+  if (session instanceof NextResponse) return session;
+
   try {
     const body = await request.json();
     const { containers, totalCost } = body;
@@ -49,23 +56,18 @@ export async function POST(
     }
     const isPartialPayment = paidValue < order.value - EPSILON;
 
-    // Проверяем баланс
-    const loansResult = db
-      .prepare("SELECT SUM(amount) as total FROM loans WHERE is_paid = false")
-      .get() as { total: number | null };
-    const totalLoans = loansResult.total || 0;
+    // Операционные расходы, уже добавленные к заказу (погрузка и т. п.),
+    // входят в total_price сверх цены товара. При оплате займа их нельзя терять:
+    // переносим их в оплаченный заказ пропорционально объему
+    const basePricePerUnit =
+      order.price_per_unit != null
+        ? order.price_per_unit
+        : (order.total_price || 0) / order.value;
+    const rawExtras = (order.total_price || 0) - order.value * basePricePerUnit;
+    const extras = rawExtras > 0.005 ? rawExtras : 0;
 
-    const expensesResult = db
-      .prepare("SELECT SUM(amount) as total FROM expenses WHERE amount > 0")
-      .get() as { total: number | null };
-    const totalExpenses = expensesResult.total || 0;
-
-    const incomeResult = db
-      .prepare("SELECT SUM(ABS(amount)) as total FROM expenses WHERE amount < 0")
-      .get() as { total: number | null };
-    const totalIncome = incomeResult.total || 0;
-
-    const currentBalance = totalLoans + totalIncome - totalExpenses;
+    // Баланс кассы без долга менеджеров (см. lib/balance.ts)
+    const currentBalance = getCashBalance();
 
     if (totalCost > currentBalance) {
       return NextResponse.json(
@@ -109,7 +111,7 @@ export async function POST(
               container_loads = ?
           WHERE id = ?
         `);
-        update.run(totalCost, JSON.stringify(containerData), orderId);
+        update.run(totalCost + extras, JSON.stringify(containerData), orderId);
       } else {
         // Частичная оплата — разделяем заказ, как при создании контейнера:
         // оплаченные контейнеры становятся новым заказом, остаток остается в займе
@@ -130,8 +132,8 @@ export async function POST(
           `Оплачено из займа ${order.order_number}`,
           order.measurement,
           paidValue,
-          totalCost / paidValue,
-          totalCost,
+          (totalCost + (extras * paidValue) / order.value) / paidValue,
+          totalCost + (extras * paidValue) / order.value,
           containers.length,
           JSON.stringify(containerData)
         );
@@ -150,7 +152,7 @@ export async function POST(
             remainingLoads = null;
           }
         }
-        const remainingValue = order.value - paidValue;
+        const remainingValue = roundQty(order.value - paidValue);
         const remainingPrice = order.total_price
           ? (order.total_price * remainingValue) / order.value
           : null;
@@ -170,17 +172,11 @@ export async function POST(
       }
 
       // Логируем активность
-      const insertLog = db.prepare(`
-        INSERT INTO activity_logs (user_id, action, entity_type, details)
-        VALUES (1, 'оплата_займа', 'order', ?)
-      `);
-      insertLog.run(
-        `Заказ ${order.order_number}: оплата займа на сумму $${totalCost}. Контейнеров: ${containers.length}${
+      logActivity(session.userId, "оплата_займа", "order", `Заказ ${order.order_number}: оплата займа на сумму $${totalCost}. Контейнеров: ${containers.length}${
           isPartialPayment
             ? `. Частичная оплата: ${paidValue} ${order.measurement}, остаток ${order.value - paidValue} ${order.measurement} в займе`
             : ""
-        }`
-      );
+        }`);
     });
 
     transaction();
