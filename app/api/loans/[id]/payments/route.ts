@@ -27,11 +27,12 @@ export async function GET(
             ELSE 0
           END as amount
         FROM activity_logs al
-        WHERE al.action = 'займ_оплачен' 
-          AND al.details LIKE '%займ ID: ${loanId}%'
+        WHERE al.action IN ('займ_погашен', 'займ_частично_погашен')
+          AND al.details LIKE ?
         ORDER BY al.created_at DESC
       `)
-      .all();
+      // Формат совпадает с записью в /api/loans/[id]/repay
+      .all(`%(ID займа: ${loanId})%`);
 
     return NextResponse.json(payments);
   } catch (error) {

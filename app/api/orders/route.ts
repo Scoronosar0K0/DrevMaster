@@ -66,6 +66,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Отрицательная сумма записалась бы как доход и увеличила баланс
+    if (
+      !(Number.isFinite(value) && value > 0) ||
+      !(Number.isFinite(total_price) && total_price > 0)
+    ) {
+      return NextResponse.json(
+        { error: "Объем и сумма заказа должны быть положительными числами" },
+        { status: 400 }
+      );
+    }
+
     // Проверяем, что поставщик и товар существуют
     const supplier = db
       .prepare("SELECT id FROM suppliers WHERE id = ?")
@@ -116,8 +127,8 @@ export async function POST(request: NextRequest) {
 
     const currentBalance = totalLoans + totalIncome - totalExpenses;
 
-    // Проверяем, достаточно ли средств
-    if (total_price > currentBalance) {
+    // Проверяем, достаточно ли средств (заказ в займ деньги из кассы не тратит)
+    if (status !== "loan" && total_price > currentBalance) {
       return NextResponse.json(
         {
           error: `Недостаточно средств! Необходимо: $${total_price.toFixed(

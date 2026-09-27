@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getJwtSecret } from "@/lib/auth";
 import { db, initDatabase } from "@/lib/database";
 import { jwtVerify } from "jose";
 
 initDatabase();
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "drevmaster-secret-key-2024"
-);
+// SQLite хранит datetime('now') в UTC как "YYYY-MM-DD HH:MM:SS".
+// ISO-строка с "T" сравнивается с таким форматом неверно
+function toSqliteDate(date: Date) {
+  return date.toISOString().replace("T", " ").slice(0, 19);
+}
 
 // Функция для создания пустых данных аналитики
 function getEmptyAnalyticsData() {
@@ -54,7 +57,7 @@ export async function GET(request: NextRequest) {
     // Декодируем токен
     let userRole: string;
     try {
-      const { payload } = await jwtVerify(token, JWT_SECRET);
+      const { payload } = await jwtVerify(token, getJwtSecret());
       userRole = payload.role as string;
     } catch (jwtError) {
       console.error("Ошибка JWT верификации:", jwtError);
@@ -81,7 +84,7 @@ export async function GET(request: NextRequest) {
     switch (period) {
       case "month":
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        dateFilter = `AND created_at >= '${startOfMonth.toISOString()}'`;
+        dateFilter = `AND created_at >= '${toSqliteDate(startOfMonth)}'`;
         break;
       case "quarter":
         const currentQuarter = Math.floor(now.getMonth() / 3);
@@ -90,11 +93,11 @@ export async function GET(request: NextRequest) {
           currentQuarter * 3,
           1
         );
-        dateFilter = `AND created_at >= '${startOfQuarter.toISOString()}'`;
+        dateFilter = `AND created_at >= '${toSqliteDate(startOfQuarter)}'`;
         break;
       case "year":
         const startOfYear = new Date(now.getFullYear(), 0, 1);
-        dateFilter = `AND created_at >= '${startOfYear.toISOString()}'`;
+        dateFilter = `AND created_at >= '${toSqliteDate(startOfYear)}'`;
         break;
     }
 
@@ -107,10 +110,11 @@ export async function GET(request: NextRequest) {
         .get() as { total: number | null };
       const totalRevenue = revenueResult.total || 0;
 
-      // Получаем общие расходы
+      // Получаем общие расходы. Доходы хранятся в expenses с отрицательной
+      // суммой и уже учтены в выручке через sales — их не вычитаем повторно
       const expensesResult = db
         .prepare(
-          `SELECT SUM(amount) as total FROM expenses WHERE 1=1 ${dateFilter}`
+          `SELECT SUM(amount) as total FROM expenses WHERE amount > 0 ${dateFilter}`
         )
         .get() as { total: number | null };
       const totalExpenses = expensesResult.total || 0;
@@ -159,7 +163,7 @@ export async function GET(request: NextRequest) {
             WHERE created_at >= ? AND created_at < ?
           `
           )
-          .get(monthDate.toISOString(), nextMonthDate.toISOString()) as {
+          .get(toSqliteDate(monthDate), toSqliteDate(nextMonthDate)) as {
           revenue: number | null;
         };
 
@@ -168,10 +172,10 @@ export async function GET(request: NextRequest) {
             `
             SELECT SUM(amount) as expenses 
             FROM expenses 
-            WHERE created_at >= ? AND created_at < ?
+            WHERE amount > 0 AND created_at >= ? AND created_at < ?
           `
           )
-          .get(monthDate.toISOString(), nextMonthDate.toISOString()) as {
+          .get(toSqliteDate(monthDate), toSqliteDate(nextMonthDate)) as {
           expenses: number | null;
         };
 

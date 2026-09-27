@@ -11,6 +11,7 @@ export async function GET() {
         `
       SELECT 
         p.id,
+        p.user_id,
         u.name,
         u.username,
         u.email,
@@ -19,7 +20,7 @@ export async function GET() {
         p.created_at
       FROM partners p
       JOIN users u ON p.user_id = u.id
-      WHERE u.is_active = true AND u.role != 'manager'
+      WHERE u.is_active = true AND u.role != 'manager' AND p.id != 0
       ORDER BY p.created_at DESC
     `
       )

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, initDatabase } from "@/lib/database";
+import { db, initDatabase, deleteUserIfNoHistory } from "@/lib/database";
 
 initDatabase();
 
@@ -12,7 +12,7 @@ export async function DELETE(
 
     // Проверяем, что партнер существует
     const partner = db
-      .prepare("SELECT id, name FROM partners WHERE id = ?")
+      .prepare("SELECT id, name, user_id FROM partners WHERE id = ?")
       .get(partnerId) as any;
 
     if (!partner) {
@@ -34,29 +34,25 @@ export async function DELETE(
       );
     }
 
-    // Начинаем транзакцию
-    const transaction = db.transaction(() => {
-      // Удаляем партнера
-      const deletePartner = db.prepare("DELETE FROM partners WHERE id = ?");
-      const result = deletePartner.run(partnerId);
+    // Удаляем партнера вместе с его учетной записью. Если у партнера есть
+    // история займов, записи нужны для отчетов — тогда только деактивируем
+    // учетную запись: партнер исчезнет из списка и не сможет войти
+    if (!deleteUserIfNoHistory(partner.user_id)) {
+      db.prepare("UPDATE users SET is_active = 0 WHERE id = ?").run(
+        partner.user_id
+      );
+    }
 
-      if (result.changes === 0) {
-        throw new Error("Партнер не найден");
-      }
-
-      // Логируем активность
-      try {
-        const insertLog = db.prepare(`
-          INSERT INTO activity_logs (user_id, action, entity_type, details)
-          VALUES (1, 'удален', 'partner', ?)
-        `);
-        insertLog.run(`Удален партнер: ${partner.name}`);
-      } catch (logError) {
-        console.error("Ошибка логирования:", logError);
-      }
-    });
-
-    transaction();
+    // Логируем активность
+    try {
+      const insertLog = db.prepare(`
+        INSERT INTO activity_logs (user_id, action, entity_type, details)
+        VALUES (1, 'удален', 'partner', ?)
+      `);
+      insertLog.run(`Удален партнер: ${partner.name}`);
+    } catch (logError) {
+      console.error("Ошибка логирования:", logError);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -86,7 +82,7 @@ export async function PUT(
 
     // Проверяем, что партнер существует
     const existingPartner = db
-      .prepare("SELECT id FROM partners WHERE id = ?")
+      .prepare("SELECT id, user_id FROM partners WHERE id = ?")
       .get(partnerId) as any;
 
     if (!existingPartner) {
@@ -96,10 +92,10 @@ export async function PUT(
       );
     }
 
-    // Проверяем уникальность username (исключая текущего партнера)
+    // Проверяем уникальность username (логин хранится в таблице users)
     const usernameCheck = db
-      .prepare("SELECT id FROM partners WHERE username = ? AND id != ?")
-      .get(username, partnerId) as any;
+      .prepare("SELECT id FROM users WHERE username = ? AND id != ?")
+      .get(username, existingPartner.user_id) as any;
 
     if (usernameCheck) {
       return NextResponse.json(
@@ -110,29 +106,32 @@ export async function PUT(
 
     // Начинаем транзакцию
     const transaction = db.transaction(() => {
-      // Обновляем партнера
-      let updateQuery = `
-        UPDATE partners 
-        SET name = ?, username = ?, email = ?, phone = ?, description = ?
+      // Логин, контакты и пароль хранятся в users, описание — в partners
+      db.prepare(
+        `
+        UPDATE users 
+        SET name = ?, username = ?, email = ?, phone = ?
         WHERE id = ?
-      `;
-      let params = [name, username, email || null, phone || null, description || null, partnerId];
+      `
+      ).run(name, username, email || null, phone || null, existingPartner.user_id);
 
-      // Если указан новый пароль, обновляем его в таблице users
+      db.prepare(
+        `
+        UPDATE partners 
+        SET name = ?, contact_info = ?, description = ?
+        WHERE id = ?
+      `
+      ).run(name, email || phone || null, description || null, partnerId);
+
+      // Если указан новый пароль, обновляем его
       if (password) {
         const bcrypt = require("bcryptjs");
         const hashedPassword = bcrypt.hashSync(password, 10);
-        
-        const updateUser = db.prepare(`
-          UPDATE users 
-          SET password = ?
-          WHERE id = (SELECT user_id FROM partners WHERE id = ?)
-        `);
-        updateUser.run(hashedPassword, partnerId);
+        db.prepare("UPDATE users SET password = ? WHERE id = ?").run(
+          hashedPassword,
+          existingPartner.user_id
+        );
       }
-
-      const updatePartner = db.prepare(updateQuery);
-      updatePartner.run(...params);
 
       // Логируем активность
       try {

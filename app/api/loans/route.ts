@@ -21,6 +21,8 @@ export async function GET() {
           WHEN l.partner_id = 0 THEN 'Администратор'
           ELSE u.name 
         END as partner_name,
+        -- manager: долг менеджера нам; иначе займ, который мы должны вернуть
+        CASE WHEN l.partner_id = 0 THEN 'admin' ELSE u.role END as partner_role,
         o.order_number
       FROM loans l
       LEFT JOIN partners p ON l.partner_id = p.id AND l.partner_id != 0
@@ -79,6 +81,20 @@ export async function POST(request: NextRequest) {
 
     // Начинаем транзакцию
     const transaction = db.transaction(() => {
+      // Займы администратора хранятся с partner_id = 0. Чтобы внешний ключ
+      // loans.partner_id -> partners.id не отклонял запись, создаем служебную
+      // запись партнера с id = 0 (в списке партнеров она не отображается)
+      if (from_admin) {
+        const adminUser = db
+          .prepare("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1")
+          .get() as { id: number } | undefined;
+        if (!adminUser) throw new Error("Администратор не найден");
+        db.prepare(
+          `INSERT OR IGNORE INTO partners (id, user_id, name, description)
+           VALUES (0, ?, 'Администратор', 'Займы администратора')`
+        ).run(adminUser.id);
+      }
+
       // Создаем займ
       const insertLoan = db.prepare(`
         INSERT INTO loans (partner_id, amount, loan_date, description, is_paid)

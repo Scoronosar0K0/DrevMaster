@@ -64,11 +64,49 @@ export async function GET(request: NextRequest) {
       console.log("Таблица suppliers еще не создана");
     }
 
+    // Количество и объем заказов на каждом этапе
+    let pipeline: { status: string; count: number; total: number }[] = [];
+    try {
+      pipeline = db
+        .prepare(
+          `SELECT status, COUNT(*) as count, COALESCE(SUM(total_price), 0) as total
+           FROM orders GROUP BY status`
+        )
+        .all() as { status: string; count: number; total: number }[];
+    } catch (e) {
+      console.log("Таблица orders еще не создана");
+    }
+
+    // Непогашенные займы раздельно: деньги, взятые у партнеров (мы должны),
+    // и долг менеджеров за товар (должны нам)
+    let partnerLoans = 0;
+    let managerDebt = 0;
+    try {
+      const loanTotals = db
+        .prepare(
+          `SELECT
+             COALESCE(SUM(CASE WHEN u.role = 'manager' THEN 0 ELSE l.amount END), 0) as partner_loans,
+             COALESCE(SUM(CASE WHEN u.role = 'manager' THEN l.amount ELSE 0 END), 0) as manager_debt
+           FROM loans l
+           LEFT JOIN partners p ON l.partner_id = p.id
+           LEFT JOIN users u ON p.user_id = u.id
+           WHERE l.is_paid = false`
+        )
+        .get() as { partner_loans: number; manager_debt: number };
+      partnerLoans = loanTotals.partner_loans;
+      managerDebt = loanTotals.manager_debt;
+    } catch (e) {
+      console.log("Таблица loans еще не создана");
+    }
+
     return NextResponse.json({
       totalOrders,
       pendingOrders,
       totalBalance,
       suppliersCount,
+      pipeline,
+      partnerLoans,
+      managerDebt,
     });
   } catch (error) {
     console.error("Ошибка получения статистики:", error);

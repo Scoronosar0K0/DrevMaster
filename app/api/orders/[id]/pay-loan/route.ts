@@ -35,6 +35,20 @@ export async function POST(
       );
     }
 
+    // Объем выбранных контейнеров не может превышать объем заказа
+    const paidValue = containers.reduce(
+      (sum: number, c: any) => sum + (Number(c.value) || 0),
+      0
+    );
+    const EPSILON = 1e-6;
+    if (paidValue <= 0 || paidValue > order.value + EPSILON) {
+      return NextResponse.json(
+        { error: "Объем выбранных контейнеров должен быть больше 0 и не превышать объем заказа" },
+        { status: 400 }
+      );
+    }
+    const isPartialPayment = paidValue < order.value - EPSILON;
+
     // Проверяем баланс
     const loansResult = db
       .prepare("SELECT SUM(amount) as total FROM loans WHERE is_paid = false")
@@ -77,15 +91,6 @@ export async function POST(
         orderId
       );
 
-      // Обновляем заказ со статусом "paid" и добавляем информацию о контейнерах
-      const update = db.prepare(`
-        UPDATE orders 
-        SET status = 'paid', 
-            total_price = ?,
-            container_loads = ?
-        WHERE id = ?
-      `);
-
       // Создаем данные контейнеров для сохранения
       const containerData = containers.map((container: any) => ({
         container: container.container,
@@ -95,7 +100,74 @@ export async function POST(
         measurement: order.measurement,
       }));
 
-      update.run(totalCost, JSON.stringify(containerData), orderId);
+      if (!isPartialPayment) {
+        // Оплачен весь объем — заказ целиком переходит в статус "paid"
+        const update = db.prepare(`
+          UPDATE orders 
+          SET status = 'paid', 
+              total_price = ?,
+              container_loads = ?
+          WHERE id = ?
+        `);
+        update.run(totalCost, JSON.stringify(containerData), orderId);
+      } else {
+        // Частичная оплата — разделяем заказ, как при создании контейнера:
+        // оплаченные контейнеры становятся новым заказом, остаток остается в займе
+        const paidOrderNumber = `${order.order_number}-P${Math.floor(Date.now() / 1000)}`;
+        db.prepare(
+          `
+          INSERT INTO orders (
+            order_number, supplier_id, item_id, date, description, measurement,
+            value, price_per_unit, total_price, status, containers, container_loads
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', ?, ?)
+        `
+        ).run(
+          paidOrderNumber,
+          order.supplier_id,
+          order.item_id,
+          order.date,
+          `Оплачено из займа ${order.order_number}`,
+          order.measurement,
+          paidValue,
+          totalCost / paidValue,
+          totalCost,
+          containers.length,
+          JSON.stringify(containerData)
+        );
+
+        // Убираем оплаченные контейнеры из исходного заказа.
+        // Номера контейнеров в интерфейсе — это позиция в container_loads (с 1)
+        const paidNumbers = new Set(containers.map((c: any) => c.container));
+        let remainingLoads: string | null = null;
+        if (order.container_loads) {
+          try {
+            const loads = JSON.parse(order.container_loads);
+            remainingLoads = JSON.stringify(
+              loads.filter((_: any, index: number) => !paidNumbers.has(index + 1))
+            );
+          } catch (e) {
+            remainingLoads = null;
+          }
+        }
+        const remainingValue = order.value - paidValue;
+        const remainingPrice = order.total_price
+          ? (order.total_price * remainingValue) / order.value
+          : null;
+        db.prepare(
+          `
+          UPDATE orders 
+          SET value = ?, total_price = ?, containers = ?, container_loads = ?
+          WHERE id = ?
+        `
+        ).run(
+          remainingValue,
+          remainingPrice,
+          Math.max(1, (order.containers || 1) - containers.length),
+          remainingLoads,
+          orderId
+        );
+      }
 
       // Логируем активность
       const insertLog = db.prepare(`
@@ -103,7 +175,11 @@ export async function POST(
         VALUES (1, 'оплата_займа', 'order', ?)
       `);
       insertLog.run(
-        `Заказ ${order.order_number}: оплата займа на сумму $${totalCost}. Контейнеров: ${containers.length}`
+        `Заказ ${order.order_number}: оплата займа на сумму $${totalCost}. Контейнеров: ${containers.length}${
+          isPartialPayment
+            ? `. Частичная оплата: ${paidValue} ${order.measurement}, остаток ${order.value - paidValue} ${order.measurement} в займе`
+            : ""
+        }`
       );
     });
 

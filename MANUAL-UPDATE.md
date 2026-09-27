@@ -79,7 +79,7 @@ pm2 restart DREVMASTER
 cat .env.local
 
 # Должно содержать:
-# JWT_SECRET=DREVMASTER-secret-key-2024
+# JWT_SECRET=<случайная строка из openssl rand -hex 32>
 # NODE_ENV=production
 # PORT=3000
 
@@ -168,7 +168,7 @@ pm2 logs DREVMASTER
 
 1. Проверьте логи приложения: `pm2 logs DREVMASTER`
 2. Проверьте логи Nginx: `tail -f /var/log/nginx/error.log`
-3. Убедитесь что JWT_SECRET одинаковый в `.env.local` и в коде
+3. Убедитесь что JWT_SECRET задан в `.env.local` (без него приложение в продакшене не запустится)
 4. Попробуйте перезапустить весь сервер: `reboot`
 
 ---

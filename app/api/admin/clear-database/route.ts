@@ -1,14 +1,22 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/database";
+import { getSessionUser } from "@/lib/auth";
 const bcrypt = require("bcryptjs");
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { password } = body;
 
-    // Проверяем пароль
-    if (password !== "Manuchehr1981") {
+    // Очистка доступна только администратору и подтверждается его паролем
+    const sessionUser = await getSessionUser(request);
+    if (!sessionUser || sessionUser.role !== "admin") {
+      return NextResponse.json({ error: "Доступ запрещен" }, { status: 403 });
+    }
+    const admin = db
+      .prepare("SELECT password FROM users WHERE id = ?")
+      .get(sessionUser.userId) as { password: string } | undefined;
+    if (!password || !admin || !bcrypt.compareSync(password, admin.password)) {
       return NextResponse.json({ error: "Неверный пароль" }, { status: 401 });
     }
     // Отключаем проверку внешних ключей для очистки

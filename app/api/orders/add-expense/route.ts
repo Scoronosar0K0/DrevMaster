@@ -31,8 +31,8 @@ export async function POST(request: NextRequest) {
     const transaction = db.transaction(() => {
       // Добавляем расход
       const insertExpense = db.prepare(`
-        INSERT INTO expenses (amount, description, type, order_id, created_at)
-        VALUES (?, ?, 'operational', ?, datetime('now'))
+        INSERT INTO expenses (amount, description, type, related_id)
+        VALUES (?, ?, 'order', ?)
       `);
       insertExpense.run(amount, description || `Операционный расход для заказа ${order.order_number}`, order_id);
 

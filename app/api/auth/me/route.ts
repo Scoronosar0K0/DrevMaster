@@ -1,33 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
-import { jwtVerify } from "jose";
+import { getSessionUser } from "@/lib/auth";
+import { db, initDatabase } from "@/lib/database";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "drevmaster-secret-key-2024"
-);
+initDatabase();
 
 export async function GET(request: NextRequest) {
   try {
-    // Получаем токен из cookie
-    const token = request.cookies.get("auth-token")?.value;
+    const session = await getSessionUser(request);
 
-    if (!token) {
+    if (!session) {
       return NextResponse.json(
-        { error: "Токен авторизации не найден" },
+        { error: "Недействительный токен" },
         { status: 401 }
       );
     }
 
-    // Декодируем токен
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    // Имя и контакты берем из базы: в токене их нет, и они могут меняться
+    const user = db
+      .prepare(
+        "SELECT id, username, name, email, phone, role FROM users WHERE id = ?"
+      )
+      .get(session.userId) as any;
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Пользователь не найден" },
+        { status: 401 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
       user: {
-        id: payload.userId,
-        username: payload.username,
-        name: payload.name,
-        role: payload.role,
-        partnerId: payload.partnerId,
+        id: user.id,
+        username: user.username,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        partnerId: session.partnerId,
       },
     });
   } catch (error) {

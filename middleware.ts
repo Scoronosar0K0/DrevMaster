@@ -1,90 +1,124 @@
 import { NextRequest, NextResponse } from "next/server";
-import { jwtVerify } from "jose";
+import { getSessionUser } from "@/lib/auth";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "drevmaster-secret-key-2024"
-);
+// true, если путь равен prefix или вложен в него ("/api/users" и "/api/users/5",
+// но не "/api/users-old")
+function under(pathname: string, prefix: string) {
+  return pathname === prefix || pathname.startsWith(prefix + "/");
+}
 
-export function middleware(request: NextRequest) {
+// Страницы, к которым менеджеры НЕ должны иметь доступ
+const MANAGER_RESTRICTED_PAGES = [
+  "/partners",
+  "/suppliers",
+  "/cash",
+  "/managers",
+  "/analytics",
+  "/orders",
+  "/history",
+];
+
+// Страницы только для администратора
+const ADMIN_ONLY_PAGES = ["/managers", "/analytics"];
+
+// Изменение собственного профиля доступно всем ролям,
+// маршрут сам проверяет, что id совпадает с текущим пользователем
+function isOwnProfileUpdate(pathname: string, method: string) {
+  return method === "PUT" && /^\/api\/users\/\d+$/.test(pathname);
+}
+
+function isApiAllowed(pathname: string, method: string, role: string) {
+  if (role === "admin") return true;
+  if (under(pathname, "/api/auth")) return true;
+  if (isOwnProfileUpdate(pathname, method)) return true;
+
+  if (role === "manager") {
+    return (
+      under(pathname, "/api/manager") ||
+      under(pathname, "/api/manager-transfers") ||
+      (method === "GET" && pathname === "/api/partners")
+    );
+  }
+
+  // Прочие роли: всё, кроме административных разделов
+  if (
+    under(pathname, "/api/admin") ||
+    under(pathname, "/api/analytics") ||
+    under(pathname, "/api/users")
+  ) {
+    return false;
+  }
+  if (under(pathname, "/api/managers") && method !== "GET") return false;
+  return true;
+}
+
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const isApi = under(pathname, "/api");
 
-  // Разрешаем доступ к странице логина и API логина
-  if (pathname.startsWith("/login") || pathname.startsWith("/api/auth/login")) {
+  // Разрешаем доступ к странице логина и API логина/выхода
+  if (under(pathname, "/login") || pathname === "/api/auth/login") {
     return NextResponse.next();
   }
 
   // Разрешаем доступ к статическим файлам
   if (
-    pathname.startsWith("/_next") ||
-    pathname.startsWith("/static") ||
-    pathname.includes(".")
+    !isApi &&
+    (pathname.startsWith("/_next") ||
+      pathname.startsWith("/static") ||
+      pathname.includes("."))
   ) {
     return NextResponse.next();
   }
 
-  // Проверяем токен из cookie или заголовка Authorization
-  let token = request.cookies.get("auth-token")?.value;
+  const user = await getSessionUser(request);
 
-  // Если токена нет в cookie, проверяем заголовок Authorization
-  if (!token) {
-    const authHeader = request.headers.get("authorization");
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      token = authHeader.substring(7);
+  if (!user) {
+    if (isApi) {
+      return NextResponse.json(
+        { error: "Требуется авторизация" },
+        { status: 401 }
+      );
     }
-  }
-
-  if (!token) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  return verifyToken(token, request);
-}
-
-async function verifyToken(token: string, request: NextRequest) {
-  try {
-    // Проверяем валидность токена с помощью jose
-    const { payload } = await jwtVerify(token, JWT_SECRET);
-    const userRole = payload.role as string;
-    const { pathname } = request.nextUrl;
-
-    // Ограничения для менеджеров
-    if (userRole === "manager") {
-      // Страницы, к которым менеджеры НЕ должны иметь доступ
-      const restrictedPaths = [
-        "/partners",
-        "/suppliers",
-        "/cash",
-        "/managers",
-        "/orders",
-        "/history",
-      ];
-
-      // Если менеджер пытается получить доступ к запрещенной странице
-      if (restrictedPaths.some((path) => pathname.startsWith(path))) {
-        return NextResponse.redirect(new URL("/manager", request.url));
-      }
-
-      // Перенаправляем менеджеров с главной страницы на их dashboard
-      if (pathname === "/") {
-        return NextResponse.redirect(new URL("/manager", request.url));
-      }
+  if (isApi) {
+    if (!isApiAllowed(pathname, request.method, user.role)) {
+      return NextResponse.json({ error: "Доступ запрещен" }, { status: 403 });
     }
     return NextResponse.next();
-  } catch (error) {
-    // Если токен недействительный, перенаправляем на логин
-    return NextResponse.redirect(new URL("/login", request.url));
   }
+
+  // Ограничения для менеджеров
+  if (user.role === "manager") {
+    if (MANAGER_RESTRICTED_PAGES.some((path) => under(pathname, path))) {
+      return NextResponse.redirect(new URL("/manager", request.url));
+    }
+
+    // Перенаправляем менеджеров с главной страницы на их dashboard
+    if (pathname === "/") {
+      return NextResponse.redirect(new URL("/manager", request.url));
+    }
+  } else if (
+    user.role !== "admin" &&
+    ADMIN_ONLY_PAGES.some((path) => under(pathname, path))
+  ) {
+    return NextResponse.redirect(new URL("/", request.url));
+  }
+
+  return NextResponse.next();
 }
 
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
+     * Все пути, кроме:
+     * - _next/static (статические файлы)
+     * - _next/image (оптимизация изображений)
+     * - favicon.ico
+     * API-маршруты теперь тоже проходят через middleware
      */
-    "/((?!api|_next/static|_next/image|favicon.ico).*)",
+    "/((?!_next/static|_next/image|favicon.ico).*)",
   ],
 };

@@ -67,8 +67,9 @@ ssh root@194.87.201.205 << 'EOF'
     npm install
     
     # Создаем файл окружения
-    cat > .env.local << 'ENVEOF'
-JWT_SECRET=drevmaster-secret-key-2024
+    # Генерируем уникальный секрет для подписи JWT (известный секрет позволяет подделать вход)
+    cat > .env.local << ENVEOF
+JWT_SECRET=$(openssl rand -hex 32)
 NODE_ENV=production
 PORT=3000
 ENVEOF

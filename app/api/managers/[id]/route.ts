@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, initDatabase } from "@/lib/database";
+import { db, initDatabase, deleteUserIfNoHistory } from "@/lib/database";
 const bcrypt = require("bcryptjs");
 
 initDatabase();
@@ -146,9 +146,15 @@ export async function DELETE(
     }
 
     // Удаляем менеджера
-    db.prepare("DELETE FROM users WHERE id = ? AND role = 'manager'").run(
-      managerId
-    );
+    if (!deleteUserIfNoHistory(managerId)) {
+      return NextResponse.json(
+        {
+          error:
+            "У менеджера есть финансовая история (долги, переводы или продажи). Деактивируйте его в настройках вместо удаления",
+        },
+        { status: 400 }
+      );
+    }
 
     // Логируем активность
     const insertLog = db.prepare(`

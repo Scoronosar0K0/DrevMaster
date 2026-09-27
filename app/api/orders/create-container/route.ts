@@ -15,11 +15,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Проверяем, что заказ существует
+    // Проверяем, что заказ существует.
+    // Нужны все поля: при частичной загрузке они копируются в новый заказ
     const order = db
-      .prepare(
-        "SELECT id, order_number, value, measurement, container_loads FROM orders WHERE id = ?"
-      )
+      .prepare("SELECT * FROM orders WHERE id = ?")
       .get(order_id) as any;
 
     if (!order) {

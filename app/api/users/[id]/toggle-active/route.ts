@@ -16,7 +16,7 @@ export async function POST(
       UPDATE users SET is_active = ? WHERE id = ?
     `);
 
-    const result = update.run(is_active, userId);
+    const result = update.run(is_active ? 1 : 0, userId);
 
     if (result.changes === 0) {
       return NextResponse.json(

@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getJwtSecret } from "@/lib/auth";
 import { db, initDatabase } from "@/lib/database";
 import bcrypt from "bcryptjs";
 import { SignJWT } from "jose";
 
 initDatabase();
-
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "drevmaster-secret-key-2024"
-);
 
 export async function POST(request: NextRequest) {
   try {
@@ -58,7 +55,7 @@ export async function POST(request: NextRequest) {
     })
       .setProtectedHeader({ alg: "HS256" })
       .setExpirationTime("7d")
-      .sign(JWT_SECRET);
+      .sign(getJwtSecret());
 
     // Логируем вход
     try {

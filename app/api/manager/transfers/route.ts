@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getJwtSecret } from "@/lib/auth";
 import { jwtVerify } from "jose";
 import { db, initDatabase } from "@/lib/database";
 
 initDatabase();
-
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "drevmaster-secret-key-2024"
-);
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,7 +18,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Декодируем токен
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, getJwtSecret());
     const userId = payload.userId as number;
     const userRole = payload.role as string;
 
@@ -74,7 +71,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Декодируем токен
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, getJwtSecret());
     const userId = payload.userId as number;
     const userRole = payload.role as string;
 

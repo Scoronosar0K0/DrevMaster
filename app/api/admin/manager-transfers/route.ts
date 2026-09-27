@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getJwtSecret } from "@/lib/auth";
 import { jwtVerify } from "jose";
 import { db, initDatabase } from "@/lib/database";
 
 initDatabase();
-
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "drevmaster-secret-key-2024"
-);
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,7 +18,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Декодируем токен
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, getJwtSecret());
     const userRole = payload.role as string;
 
     if (userRole !== "admin") {
@@ -83,7 +80,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Декодируем токен
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, getJwtSecret());
     const userId = payload.userId as number;
     const userRole = payload.role as string;
 
@@ -111,60 +108,57 @@ export async function PATCH(request: NextRequest) {
       WHERE id = ? AND status = 'pending'
     `);
 
-    const result = updateTransfer.run(status, userId, id);
+    // Статус, погашение долга и доход записываются атомарно
+    const applyDecision = db.transaction((): boolean => {
+      const result = updateTransfer.run(status, userId, id);
+      if (result.changes === 0) return false;
 
-    if (result.changes === 0) {
-      return NextResponse.json(
-        { error: "Перевод не найден или уже обработан" },
-        { status: 404 }
-      );
-    }
+      // Если перевод одобрен, уменьшаем долг менеджера
+      if (status === "approved") {
+        // Получаем данные перевода с именем менеджера
+        const transfer = db
+          .prepare(`
+            SELECT t.*, u.name as manager_name 
+            FROM manager_transfers t
+            JOIN users u ON t.from_manager_id = u.id
+            WHERE t.id = ?
+          `)
+          .get(id) as any;
 
-    // Если перевод одобрен, уменьшаем долг менеджера
-    if (status === 'approved') {
-      // Получаем данные перевода с именем менеджера
-      const transfer = db
-        .prepare(`
-          SELECT t.*, u.name as manager_name 
-          FROM manager_transfers t
-          JOIN users u ON t.from_manager_id = u.id
-          WHERE t.id = ?
-        `)
-        .get(id) as any;
+        if (transfer) {
+          // Находим партнера менеджера
+          const managerPartner = db
+            .prepare("SELECT id FROM partners WHERE user_id = ?")
+            .get(transfer.from_manager_id) as any;
 
-      if (transfer) {
-        // Находим партнера менеджера
-        const managerPartner = db
-          .prepare("SELECT id FROM partners WHERE user_id = ?")
-          .get(transfer.from_manager_id) as any;
+          if (managerPartner) {
+            // Ищем активные займы менеджера для уменьшения
+            const managerLoans = db
+              .prepare(
+                `SELECT * FROM loans 
+                 WHERE partner_id = ? AND is_paid = false 
+                 ORDER BY created_at ASC`
+              )
+              .all(managerPartner.id) as any[];
 
-        if (managerPartner) {
-          // Ищем активные займы менеджера для уменьшения
-          const managerLoans = db
-            .prepare(
-              `SELECT * FROM loans 
-               WHERE partner_id = ? AND is_paid = false 
-               ORDER BY created_at ASC`
-            )
-            .all(managerPartner.id) as any[];
+            let remainingAmount = transfer.amount;
 
-          let remainingAmount = transfer.amount;
+            // Уменьшаем займы менеджера на сумму перевода
+            for (const loan of managerLoans) {
+              if (remainingAmount <= 0) break;
 
-          // Уменьшаем займы менеджера на сумму перевода
-          for (const loan of managerLoans) {
-            if (remainingAmount <= 0) break;
-
-            if (loan.amount <= remainingAmount) {
-              // Полностью погашаем этот займ
-              db.prepare("UPDATE loans SET is_paid = true WHERE id = ?").run(loan.id);
-              remainingAmount -= loan.amount;
-            } else {
-              // Частично уменьшаем займ
-              db.prepare("UPDATE loans SET amount = amount - ? WHERE id = ?").run(
-                remainingAmount,
-                loan.id
-              );
-              remainingAmount = 0;
+              if (loan.amount <= remainingAmount) {
+                // Полностью погашаем этот займ
+                db.prepare("UPDATE loans SET is_paid = true WHERE id = ?").run(loan.id);
+                remainingAmount -= loan.amount;
+              } else {
+                // Частично уменьшаем займ
+                db.prepare("UPDATE loans SET amount = amount - ? WHERE id = ?").run(
+                  remainingAmount,
+                  loan.id
+                );
+                remainingAmount = 0;
+              }
             }
           }
 
@@ -180,6 +174,14 @@ export async function PATCH(request: NextRequest) {
           );
         }
       }
+      return true;
+    });
+
+    if (!applyDecision()) {
+      return NextResponse.json(
+        { error: "Перевод не найден или уже обработан" },
+        { status: 404 }
+      );
     }
 
     // Логируем активность

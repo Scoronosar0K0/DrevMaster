@@ -19,10 +19,13 @@ export async function POST(
       );
     }
 
-    // Проверяем, что заказ существует и имеет статус "paid"
+    // Проверяем, что заказ существует и ожидает оплаты транспорта
+    // (после создания контейнера заказ получает статус "in_container")
     const order = db
-      .prepare("SELECT * FROM orders WHERE id = ? AND status = ?")
-      .get(orderId, "paid") as any;
+      .prepare(
+        "SELECT * FROM orders WHERE id = ? AND status IN ('paid', 'in_container')"
+      )
+      .get(orderId) as any;
     if (!order) {
       return NextResponse.json(
         { error: "Заказ не найден или уже обработан" },

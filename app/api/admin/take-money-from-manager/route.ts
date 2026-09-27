@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getJwtSecret } from "@/lib/auth";
 import { db, initDatabase } from "@/lib/database";
 import { jwtVerify } from "jose";
 
 initDatabase();
-
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "drevmaster-secret-key-2024"
-);
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,7 +18,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Декодируем токен
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, getJwtSecret());
     const userId = payload.userId as number;
     const userRole = payload.role as string;
 
@@ -132,15 +129,20 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Если остались деньги после погашения всех займов, добавляем их в общий баланс
-        if (remainingAmount > 0) {
-          const insertLoan = db.prepare(`
-            INSERT INTO loans (partner_id, amount, is_paid)
-            VALUES (1, ?, false)
-          `);
-          insertLoan.run(remainingAmount);
-        }
       }
+
+      // Полученные деньги — доход кассы (как при одобрении перевода менеджера).
+      // Сумма сверх долга менеджера тоже учитывается здесь как доход
+      db.prepare(
+        `
+        INSERT INTO expenses (amount, description, type, related_id)
+        VALUES (?, ?, 'other', ?)
+      `
+      ).run(
+        -amount, // Отрицательная сумма = доход
+        `Получены деньги от менеджера ${manager.name} - $${amount}`,
+        manager_id
+      );
 
       // Логируем активность взятия денег
       const insertLog = db.prepare(`

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getJwtSecret } from "@/lib/auth";
 import { db, initDatabase } from "@/lib/database";
 
 initDatabase();
@@ -17,10 +18,7 @@ export async function GET(request: NextRequest) {
 
     // Декодируем токен
     const { jwtVerify } = await import("jose");
-    const JWT_SECRET = new TextEncoder().encode(
-      process.env.JWT_SECRET || "drevmaster-secret-key-2024"
-    );
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, getJwtSecret());
     const managerId = payload.userId as number;
 
     const transfers = db
@@ -66,10 +64,7 @@ export async function POST(request: NextRequest) {
 
     // Декодируем токен
     const { jwtVerify } = await import("jose");
-    const JWT_SECRET = new TextEncoder().encode(
-      process.env.JWT_SECRET || "drevmaster-secret-key-2024"
-    );
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, getJwtSecret());
     const managerId = payload.userId as number;
 
     const body = await request.json();

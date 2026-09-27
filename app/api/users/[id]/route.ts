@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, initDatabase } from "@/lib/database";
+import { db, initDatabase, deleteUserIfNoHistory } from "@/lib/database";
+import { getSessionUser } from "@/lib/auth";
 const bcrypt = require("bcryptjs");
 
 initDatabase();
@@ -10,8 +11,32 @@ export async function PUT(
 ) {
   try {
     const body = await request.json();
-    const { password, role, name, email, phone, currentPassword } = body;
+    const { password, name, email, phone, currentPassword } = body;
+    let { role } = body;
     const userId = parseInt(params.id);
+
+    // Администратор может менять любого пользователя,
+    // остальные — только свой профиль и без смены роли
+    const sessionUser = await getSessionUser(request);
+    if (!sessionUser) {
+      return NextResponse.json(
+        { error: "Требуется авторизация" },
+        { status: 401 }
+      );
+    }
+    const isAdmin = sessionUser.role === "admin";
+    if (!isAdmin && sessionUser.userId !== userId) {
+      return NextResponse.json({ error: "Доступ запрещен" }, { status: 403 });
+    }
+    if (!isAdmin) {
+      role = undefined;
+      if (password && !currentPassword) {
+        return NextResponse.json(
+          { error: "Введите текущий пароль" },
+          { status: 400 }
+        );
+      }
+    }
 
     // Для изменения пароля требуется только имя
     // Для изменения роли требуется и роль и имя
@@ -151,13 +176,13 @@ export async function DELETE(
     }
 
     // Удаляем пользователя
-    const deleteUser = db.prepare("DELETE FROM users WHERE id = ?");
-    const result = deleteUser.run(userId);
-
-    if (result.changes === 0) {
+    if (!deleteUserIfNoHistory(userId)) {
       return NextResponse.json(
-        { error: "Пользователь не найден" },
-        { status: 404 }
+        {
+          error:
+            "У пользователя есть финансовая история (займы, переводы или продажи). Деактивируйте его вместо удаления",
+        },
+        { status: 400 }
       );
     }
 

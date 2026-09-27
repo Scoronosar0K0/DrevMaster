@@ -15,7 +15,7 @@ cd drevmaster
 npm install
 
 # Создание файла окружения
-echo "JWT_SECRET=drevmaster-secret-key-2024" > .env.local
+echo "JWT_SECRET=$(openssl rand -hex 32)" > .env.local
 
 # Запуск в режиме разработки
 npm run dev
@@ -40,7 +40,7 @@ npm install
 
 # Создание файла окружения
 cat > .env.local << EOF
-JWT_SECRET=drevmaster-secret-key-2024
+JWT_SECRET=$(openssl rand -hex 32)
 NODE_ENV=production
 PORT=3000
 EOF
@@ -59,8 +59,8 @@ npm start
 Создайте файл `.env.local` в корне проекта:
 
 ```env
-# JWT секрет (обязательно)
-JWT_SECRET=drevmaster-secret-key-2024
+# JWT секрет (обязательно в продакшене). Сгенерируйте: openssl rand -hex 32
+JWT_SECRET=замените-на-случайную-строку
 
 # Режим работы
 NODE_ENV=production
@@ -111,7 +111,7 @@ PORT=3000
 
 ### Рекомендации:
 
-1. Измените JWT_SECRET на уникальный
+1. Задайте уникальный JWT_SECRET (`openssl rand -hex 32`). Без него приложение в продакшене не запустится
 2. Создайте сильные пароли для пользователей
 3. Настройте HTTPS для продакшена
 4. Регулярно делайте бэкапы базы данных

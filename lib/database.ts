@@ -8,6 +8,22 @@ const db = new Database(dbPath);
 // Включаем поддержку внешних ключей
 db.pragma("foreign_keys = ON");
 
+// Ждем освобождения блокировки вместо мгновенной ошибки SQLITE_BUSY
+// (при сборке несколько процессов Next.js открывают базу одновременно)
+db.pragma("busy_timeout = 5000");
+
+// Выполняет ALTER TABLE ADD COLUMN, игнорируя ошибку, если другой процесс
+// уже успел добавить колонку
+function addColumnIfMissing(sql: string) {
+  try {
+    db.exec(sql);
+  } catch (e: any) {
+    if (!String(e?.message).includes("duplicate column name")) throw e;
+  }
+}
+
+let isInitialized = false;
+
 // Типы данных
 export interface User {
   id: number;
@@ -97,6 +113,10 @@ export interface ActivityLog {
 
 // Инициализация таблиц
 export function initDatabase() {
+  // Каждый API-маршрут вызывает initDatabase при импорте — выполняем один раз
+  if (isInitialized) return;
+  isInitialized = true;
+
   // Безопасная миграция для добавления роли 'manager'
   try {
     // Проверяем, существует ли таблица users
@@ -285,12 +305,12 @@ export function initDatabase() {
 
   if (!hasNameColumn) {
     console.log("Добавляем колонку 'name' в таблицу partners...");
-    db.exec(`ALTER TABLE partners ADD COLUMN name TEXT`);
+    addColumnIfMissing(`ALTER TABLE partners ADD COLUMN name TEXT`);
   }
 
   if (!hasContactInfoColumn) {
     console.log("Добавляем колонку 'contact_info' в таблицу partners...");
-    db.exec(`ALTER TABLE partners ADD COLUMN contact_info TEXT`);
+    addColumnIfMissing(`ALTER TABLE partners ADD COLUMN contact_info TEXT`);
   }
 
   // Обновляем существующих партнеров, заполняя name и contact_info из users
@@ -415,12 +435,12 @@ export function initDatabase() {
       // Добавляем новые колонки если их нет
       if (!loanDateColumn) {
         console.log("Добавляем колонку 'loan_date' в таблицу loans...");
-        db.exec(`ALTER TABLE loans ADD COLUMN loan_date TEXT`);
+        addColumnIfMissing(`ALTER TABLE loans ADD COLUMN loan_date TEXT`);
       }
 
       if (!descriptionColumn) {
         console.log("Добавляем колонку 'description' в таблицу loans...");
-        db.exec(`ALTER TABLE loans ADD COLUMN description TEXT`);
+        addColumnIfMissing(`ALTER TABLE loans ADD COLUMN description TEXT`);
       }
     }
   } catch (error) {
@@ -611,22 +631,49 @@ export function initDatabase() {
     console.log("Ошибка при миграции orders:", error);
   }
 
-  // Создаем администратора по умолчанию
+  // Создаем администратора по умолчанию.
+  // INSERT OR IGNORE: несколько процессов сборки могут дойти сюда одновременно
   const adminExists = db
     .prepare("SELECT id FROM users WHERE username = 'admin'")
     .get();
   if (!adminExists) {
-    const bcrypt = require("bcryptjs");
     const hashedPassword = bcrypt.hashSync("admin123", 10);
 
-    db.prepare(
-      `
-      INSERT INTO users (username, password, role, name, email)
+    const result = db
+      .prepare(
+        `
+      INSERT OR IGNORE INTO users (username, password, role, name, email)
       VALUES ('admin', ?, 'admin', 'Администратор', 'admin@drevmaster.com')
     `
-    ).run(hashedPassword);
+      )
+      .run(hashedPassword);
 
-    console.log("Создан пользователь admin с паролем: admin123");
+    if (result.changes > 0) {
+      console.log("Создан пользователь admin с паролем: admin123");
+    }
+  }
+}
+
+// Удаляет пользователя. Записи журнала остаются, но без привязки к нему.
+// Возвращает false, если у пользователя есть финансовая история (займы,
+// переводы, продажи) — такого пользователя можно только деактивировать
+export function deleteUserIfNoHistory(userId: number): boolean {
+  const remove = db.transaction(() => {
+    db.prepare("UPDATE activity_logs SET user_id = NULL WHERE user_id = ?").run(
+      userId
+    );
+    db.prepare(
+      "DELETE FROM partners WHERE user_id = ? AND id NOT IN (SELECT partner_id FROM loans)"
+    ).run(userId);
+    db.prepare("DELETE FROM users WHERE id = ?").run(userId);
+  });
+
+  try {
+    remove();
+    return true;
+  } catch (e: any) {
+    if (e?.code === "SQLITE_CONSTRAINT_FOREIGNKEY") return false;
+    throw e;
   }
 }
 
