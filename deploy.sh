@@ -46,14 +46,36 @@ echo "✅ Node.js установлен"
 # Клонируем репозиторий (замените на ваш URL)
 echo "📥 Клонируем репозиторий..."
 ssh root@194.87.201.205 << 'EOF'
+    set -e
+    DATA_DIR=/var/lib/drevmaster
+    mkdir -p "$DATA_DIR/backups"
     cd /var/www/drevmaster
-    
-    # Удаляем старую версию если есть
-    rm -rf drevmaster
-    
-    # Клонируем репозиторий
-    git clone https://github.com/Scoronosar0K0/drevmaster.git
-    cd drevmaster
+
+    # База данных хранится вне папки с кодом ($DATA_DIR), чтобы повторный
+    # деплой ее не удалял. Переносим базу из старого расположения внутри checkout
+    if [ -f drevmaster/drevmaster.db ] && [ ! -f "$DATA_DIR/drevmaster.db" ]; then
+        cp drevmaster/drevmaster.db "$DATA_DIR/drevmaster.db"
+    fi
+
+    # Резервная копия базы перед деплоем
+    if [ -f "$DATA_DIR/drevmaster.db" ]; then
+        cp "$DATA_DIR/drevmaster.db" "$DATA_DIR/backups/drevmaster-$(date +%Y%m%d-%H%M%S).db"
+    fi
+
+    # Сохраняем .env.local (в нем JWT_SECRET: при смене секрета всех разлогинит)
+    if [ -f drevmaster/.env.local ] && [ ! -f "$DATA_DIR/.env.local" ]; then
+        cp drevmaster/.env.local "$DATA_DIR/.env.local"
+    fi
+
+    if [ -d drevmaster/.git ]; then
+        # Код уже есть — обновляем, а не удаляем вместе с данными
+        cd drevmaster
+        git fetch origin main
+        git reset --hard origin/main
+    else
+        git clone https://github.com/Scoronosar0K0/drevmaster.git
+        cd drevmaster
+    fi
 EOF
 
 echo "✅ Репозиторий склонирован"
@@ -66,13 +88,25 @@ ssh root@194.87.201.205 << 'EOF'
     # Устанавливаем зависимости
     npm install
     
-    # Создаем файл окружения
-    # Генерируем уникальный секрет для подписи JWT (известный секрет позволяет подделать вход)
-    cat > .env.local << ENVEOF
+    # Файл окружения хранится в /var/lib/drevmaster и создается один раз.
+    # Уникальный JWT_SECRET генерируется при первом деплое (известный секрет
+    # позволяет подделать вход) и сохраняется между деплоями
+    DATA_DIR=/var/lib/drevmaster
+    if [ ! -f "$DATA_DIR/.env.local" ]; then
+        cat > "$DATA_DIR/.env.local" << ENVEOF
 JWT_SECRET=$(openssl rand -hex 32)
+DATABASE_PATH=$DATA_DIR/drevmaster.db
 NODE_ENV=production
 PORT=3000
 ENVEOF
+    fi
+    grep -q '^DATABASE_PATH=' "$DATA_DIR/.env.local" || echo "DATABASE_PATH=$DATA_DIR/drevmaster.db" >> "$DATA_DIR/.env.local"
+    # Публично известный секрет из старой документации заменяем случайным
+    # (все пользователи один раз войдут заново)
+    if grep -q '^JWT_SECRET=drevmaster-secret-key-2024$' "$DATA_DIR/.env.local"; then
+        sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" "$DATA_DIR/.env.local"
+    fi
+    cp "$DATA_DIR/.env.local" .env.local
     
     # Собираем приложение
     npm run build

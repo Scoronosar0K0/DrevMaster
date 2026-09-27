@@ -2,7 +2,9 @@ const Database = require("better-sqlite3");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 
-const dbPath = path.join(process.cwd(), "drevmaster.db");
+// DATABASE_PATH позволяет хранить базу вне папки с кодом (см. deploy.sh)
+const dbPath =
+  process.env.DATABASE_PATH || path.join(process.cwd(), "drevmaster.db");
 const db = new Database(dbPath);
 
 // Включаем поддержку внешних ключей
